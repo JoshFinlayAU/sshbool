@@ -18,6 +18,7 @@ export type ActivityId =
   | "hostSettings"
   | "ai"
   | "keys"
+  | "knownHosts"
   | "plugins"
   | "audit"
   | "sync"
@@ -43,6 +44,7 @@ export const GLOBAL_ACTIVITIES: ActivityId[] = [
   "connections",
   "ai",
   "keys",
+  "knownHosts",
   "plugins",
   "audit",
   "sync",

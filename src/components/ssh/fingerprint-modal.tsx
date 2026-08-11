@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ShieldAlert, ShieldCheck, Copy, Check, Server, Key, AlertTriangle } from "lucide-react"
+import { ShieldCheck, Copy, Check, Server, Key, AlertTriangle, ShieldAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useTofuStore } from "@/stores/tofu.store"
 import { ipc } from "@/lib/ipc/commands"
@@ -26,47 +26,46 @@ export function FingerprintVerificationModal() {
   // Security alert when host key has changed
   if (pendingHostKeyChanged) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-        <div className="w-full max-w-lg rounded-2xl border border-red-500/30 bg-zinc-950/95 p-6 shadow-2xl shadow-red-950/30 text-foreground overflow-hidden relative">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-600 via-red-500 to-red-600" />
-          
-          <div className="flex items-start gap-4 mb-4 border-b border-zinc-800/80 pb-4">
-            <div className="rounded-xl bg-red-500/10 p-3 text-red-400 border border-red-500/20 shrink-0">
-              <ShieldAlert className="h-6 w-6" />
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+        <div className="w-full max-w-md rounded-xl border border-destructive/40 bg-background p-5 shadow-lg text-foreground">
+          <div className="flex items-start gap-3.5 mb-4 border-b border-border pb-3.5">
+            <div className="rounded-lg bg-destructive/10 p-2 text-destructive shrink-0 mt-0.5">
+              <ShieldAlert className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-red-400">
+              <h2 className="text-sm font-semibold text-destructive">
                 Host Key Verification Failed
               </h2>
-              <p className="text-xs text-zinc-400 mt-1">
-                SECURITY RISK — REMOTE HOST KEY HAS CHANGED
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Security Warning — Server host key mismatch detected
               </p>
             </div>
           </div>
 
-          <p className="text-xs text-zinc-300 leading-relaxed mb-4">
-            The host key offered by the server does not match the saved key in your database. This could indicate a Man-in-the-Middle attack or a server re-installation.
+          <p className="text-xs text-muted-foreground leading-relaxed mb-4">
+            The host key offered by the server does not match the key saved in your database. This could indicate a Man-in-the-Middle attack or a server re-installation.
           </p>
 
-          <div className="space-y-3 rounded-xl border border-red-500/20 bg-red-950/20 p-3.5 text-xs font-mono mb-6">
+          <div className="space-y-2.5 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs font-mono mb-5">
             <div>
-              <span className="text-red-400 font-medium block mb-1">Expected Key (Database):</span>
-              <code className="block break-all rounded-lg bg-zinc-900/90 p-2.5 text-zinc-300 border border-zinc-800 select-all">
+              <span className="text-muted-foreground block mb-1 font-sans text-[11px]">Expected (Database):</span>
+              <code className="block break-all rounded bg-muted/60 p-2 text-foreground text-[11px]">
                 {pendingHostKeyChanged.expected}
               </code>
             </div>
             <div>
-              <span className="text-red-400 font-medium block mb-1">Received Key (Server):</span>
-              <code className="block break-all rounded-lg bg-zinc-900/90 p-2.5 text-red-300 border border-red-500/30 select-all font-bold">
+              <span className="text-destructive block mb-1 font-sans text-[11px] font-medium">Received (Server):</span>
+              <code className="block break-all rounded bg-destructive/10 p-2 text-destructive text-[11px]">
                 {pendingHostKeyChanged.actual}
               </code>
             </div>
           </div>
 
-          <div className="flex justify-end gap-3">
+          <div className="flex justify-end gap-2">
             <Button
               variant="destructive"
-              className="w-full sm:w-auto font-semibold px-5 text-xs"
+              size="sm"
+              className="text-xs font-medium px-4"
               onClick={() => {
                 useConnectionStore.getState().setError(pendingHostKeyChanged.hostId, "Host key changed — connection aborted")
                 setPendingHostKeyChanged(null)
@@ -151,70 +150,67 @@ export function FingerprintVerificationModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-xl rounded-2xl border border-zinc-800/90 bg-zinc-950/95 p-6 shadow-2xl shadow-black/80 text-foreground overflow-hidden relative">
-        {/* Subtle Warm Top Accent Bar */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500/70 via-amber-400/50 to-amber-500/70" />
-
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+      <div className="w-full max-w-lg rounded-xl border border-border bg-background p-5 shadow-lg text-foreground">
         {/* Modal Header */}
-        <div className="flex items-start gap-3.5 mb-5 border-b border-zinc-800/80 pb-4">
-          <div className="rounded-xl bg-amber-500/10 p-2.5 text-amber-400/90 border border-amber-500/20 shrink-0 mt-0.5">
-            <ShieldCheck className="h-6 w-6" />
+        <div className="flex items-start gap-3.5 mb-4 border-b border-border pb-3.5">
+          <div className="rounded-lg bg-muted p-2 text-foreground shrink-0 mt-0.5">
+            <ShieldCheck className="h-5 w-5" />
           </div>
           <div className="flex-1">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-zinc-100 tracking-tight">
+              <h2 className="text-sm font-semibold tracking-tight">
                 Host Key Verification
               </h2>
-              <span className="text-[10px] font-medium tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300/90 border border-amber-500/20">
+              <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border">
                 New Host Key
               </span>
             </div>
-            <p className="text-xs text-zinc-400 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               The authenticity of this remote host has not been verified yet.
             </p>
           </div>
         </div>
 
-        {/* Connection & Algorithm Info Grid */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-3">
-            <div className="flex items-center gap-1.5 text-xs text-zinc-400 mb-1">
-              <Server className="h-3.5 w-3.5 text-amber-400/80" />
+        {/* Host & Key Alg Details */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-1">
+              <Server className="h-3.5 w-3.5" />
               <span>Connecting To</span>
             </div>
-            <div className="font-mono font-semibold text-xs text-zinc-200 truncate select-all">
+            <div className="font-mono text-xs font-medium text-foreground truncate select-all">
               {pendingFingerprint.host}:{pendingFingerprint.port}
             </div>
           </div>
-          <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-3">
-            <div className="flex items-center gap-1.5 text-xs text-zinc-400 mb-1">
-              <Key className="h-3.5 w-3.5 text-amber-400/80" />
+          <div className="rounded-lg border border-border bg-muted/20 p-2.5">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mb-1">
+              <Key className="h-3.5 w-3.5" />
               <span>Key Algorithm</span>
             </div>
-            <div className="font-mono font-semibold text-xs text-amber-300/90 truncate">
+            <div className="font-mono text-xs font-medium text-foreground truncate">
               {pendingFingerprint.keyType}
             </div>
           </div>
         </div>
 
         {/* Fingerprints Container */}
-        <div className="space-y-3 rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-4 mb-4">
+        <div className="space-y-3 rounded-lg border border-border bg-muted/10 p-3.5 mb-3">
           {/* SHA-256 */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-medium text-zinc-300">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-muted-foreground">
                 SHA-256 Fingerprint
               </span>
               <button
                 type="button"
                 onClick={() => copyToClipboard(cleanSha256, "sha256")}
-                className="text-[11px] text-zinc-400 hover:text-amber-300 flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-zinc-800/60 border border-zinc-700/50"
+                className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-muted border border-border"
               >
                 {copiedField === "sha256" ? (
                   <>
-                    <Check className="h-3 w-3 text-emerald-400" />
-                    <span className="text-emerald-400">Copied</span>
+                    <Check className="h-3 w-3 text-emerald-500" />
+                    <span>Copied</span>
                   </>
                 ) : (
                   <>
@@ -224,7 +220,7 @@ export function FingerprintVerificationModal() {
                 )}
               </button>
             </div>
-            <code className="block break-all rounded-lg border border-zinc-800 bg-zinc-950 p-2.5 font-mono text-xs text-amber-300/90 select-all leading-relaxed">
+            <code className="block break-all rounded border border-border bg-muted/40 p-2 font-mono text-xs text-foreground select-all">
               {cleanSha256}
             </code>
           </div>
@@ -232,19 +228,19 @@ export function FingerprintVerificationModal() {
           {/* MD5 Fingerprint */}
           {cleanMd5 && (
             <div>
-              <div className="flex items-center justify-between mb-1.5 pt-1">
-                <span className="text-xs font-medium text-zinc-400">
+              <div className="flex items-center justify-between mb-1 pt-1">
+                <span className="text-xs font-medium text-muted-foreground">
                   MD5 Fingerprint
                 </span>
                 <button
                   type="button"
                   onClick={() => copyToClipboard(cleanMd5, "md5")}
-                  className="text-[11px] text-zinc-400 hover:text-amber-300 flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-zinc-800/60 border border-zinc-700/50"
+                  className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-muted border border-border"
                 >
                   {copiedField === "md5" ? (
                     <>
-                      <Check className="h-3 w-3 text-emerald-400" />
-                      <span className="text-emerald-400">Copied</span>
+                      <Check className="h-3 w-3 text-emerald-500" />
+                      <span>Copied</span>
                     </>
                   ) : (
                     <>
@@ -254,27 +250,28 @@ export function FingerprintVerificationModal() {
                   )}
                 </button>
               </div>
-              <code className="block break-all rounded-lg border border-zinc-800 bg-zinc-950 p-2.5 font-mono text-xs text-zinc-400 select-all leading-relaxed">
+              <code className="block break-all rounded border border-border bg-muted/40 p-2 font-mono text-xs text-muted-foreground select-all">
                 {cleanMd5}
               </code>
             </div>
           )}
         </div>
 
-        {/* Security Warning Notice */}
-        <div className="flex items-start gap-2.5 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-3 text-xs text-zinc-400 mb-6">
-          <AlertTriangle className="h-4 w-4 text-amber-400/80 shrink-0 mt-0.5" />
+        {/* Warning Notice */}
+        <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/20 p-2.5 text-xs text-muted-foreground mb-4">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
           <span>
-            Please verify the fingerprint with your administrator. Accepting unverified keys is <strong>not recommended</strong>.
+            Please verify the fingerprint with your administrator before accepting.
           </span>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-3 border-t border-zinc-800/80">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
           <Button
-            variant="outline"
+            variant="ghost"
+            size="sm"
             disabled={loading}
-            className="w-full sm:w-auto text-xs text-zinc-400 border-zinc-800 hover:bg-zinc-900 hover:text-zinc-200"
+            className="text-xs text-muted-foreground hover:text-foreground"
             onClick={() => {
               useConnectionStore.getState().setError(pendingFingerprint.hostId, "Connection cancelled by user")
               setPendingFingerprint(null)
@@ -284,17 +281,19 @@ export function FingerprintVerificationModal() {
           </Button>
 
           <Button
-            variant="secondary"
+            variant="outline"
+            size="sm"
             disabled={loading}
-            className="w-full sm:w-auto text-xs bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 font-medium"
+            className="text-xs font-medium"
             onClick={handleAcceptOnce}
           >
             Accept Once
           </Button>
 
           <Button
+            size="sm"
             disabled={loading}
-            className="w-full sm:w-auto text-xs bg-amber-500/90 hover:bg-amber-500 text-zinc-950 font-semibold shadow-md shadow-amber-500/10 px-5"
+            className="text-xs font-medium px-4"
             onClick={handleAcceptAndSave}
           >
             {loading ? "Saving..." : "Accept & Save"}

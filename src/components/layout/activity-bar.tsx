@@ -4,6 +4,7 @@ import {
   Cloud,
   Database,
   Shield,
+  ShieldCheck,
   FolderKey,
   HardDrive,
   Settings,
@@ -28,6 +29,7 @@ const items: { id: ActivityId; icon: typeof Server; label: string }[] = [
   { id: "devtools", icon: Wrench, label: "Dev Tools" },
   { id: "ai", icon: Bot, label: "AI" },
   { id: "keys", icon: FolderKey, label: "Keys" },
+  { id: "knownHosts", icon: ShieldCheck, label: "Host Keys" },
   // Plugins hidden for now — bring back when ready.
   { id: "audit", icon: Shield, label: "Audit" },
   { id: "sync", icon: Cloud, label: "Sync" },

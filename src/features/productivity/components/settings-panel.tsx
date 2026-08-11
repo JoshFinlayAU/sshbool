@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Monitor, Moon, Sun } from "lucide-react"
+import { Monitor, Moon, Sun, ShieldCheck } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import { KnownHostKeysPanel } from "@/features/vault/components/known-hosts-panel"
 import { Switch } from "@/components/ui/switch"
 import {
   Select,
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/select"
 import { ipc } from "@/lib/ipc/commands"
 import { cn } from "@/lib/utils"
+import { useLayoutStore } from "@/stores/layout.store"
 import { LicenseSettings } from "@/features/license/components/license-settings"
 
 const SECTIONS = [
@@ -26,7 +28,7 @@ const SECTIONS = [
   "security",
   "license",
   "team",
-  "keys",
+  "hostKeys",
   "keyboard",
   "updates",
   "about",
@@ -48,6 +50,7 @@ function SecuritySettings() {
       void qc.invalidateQueries({ queryKey: ["settings", "lockOnStartup"] })
     },
   })
+
   return (
     <div className="space-y-6">
       <div>
@@ -72,6 +75,7 @@ function SecuritySettings() {
             onCheckedChange={(checked) => toggleLock.mutate(checked)}
           />
         </div>
+
         <div className="pt-2">
           <Button size="sm" variant="outline" onClick={() => void ipc.vaultLock()}>
             Lock vault now
@@ -119,7 +123,7 @@ export function SettingsPanel({ initial = "general" }: { initial?: Section }) {
             }`}
             onClick={() => setSection(s)}
           >
-            {s}
+            {s === "hostKeys" ? "Host Keys" : s}
           </button>
         ))}
       </aside>
@@ -203,10 +207,13 @@ export function SettingsPanel({ initial = "general" }: { initial?: Section }) {
         {section === "security" && (
            <SecuritySettings />
         )}
-                {section === "terminal" && (
+        {section === "terminal" && (
           <TerminalSettings />
         )}
-        {!["general", "appearance", "terminal", "about", "updates", "security", "license", "team"].includes(
+        {section === "hostKeys" && (
+          <KnownHostKeysPanel />
+        )}
+        {!["general", "appearance", "terminal", "about", "updates", "security", "license", "team", "hostKeys"].includes(
           section,
         ) && (
           <div>

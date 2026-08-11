@@ -20,6 +20,7 @@ import { SftpExplorer } from "@/features/sftp/components/sftp-explorer"
 import { SyncPanel } from "@/features/sync/components/sync-panel"
 import { TerminalWorkspace } from "@/features/terminal/components/terminal-workspace"
 import { KeyManager } from "@/features/vault/components/key-manager"
+import { KnownHostKeysPanel } from "@/features/vault/components/known-hosts-panel"
 import { UnlockScreen } from "@/features/vault/components/unlock-screen"
 import { useEvent } from "@/hooks/use-event"
 import { useTaskbarTransferProgress } from "@/hooks/use-taskbar-transfer-progress"
@@ -456,6 +457,7 @@ export function App() {
           ))}
         {activity === "ai" && <AiPanel />}
         {activity === "keys" && <KeyManager />}
+        {activity === "knownHosts" && <KnownHostKeysPanel />}
         {activity === "plugins" && <PluginsPanel />}
         {activity === "audit" && <AuditPanel />}
         {activity === "sync" && <SyncPanel />}

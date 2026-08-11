@@ -26,6 +26,7 @@ import { formatAppError, IpcError, ipc } from "@/lib/ipc/commands"
 import type { GenerateKeyDto, SshKeyDto } from "@/lib/ipc/types"
 import { cn } from "@/lib/utils"
 import { toast } from "@/stores/toast.store"
+import { useLayoutStore } from "@/stores/layout.store"
 
 function errMsg(e: unknown) {
   if (e instanceof IpcError) return formatAppError(e.appError)
@@ -235,7 +236,7 @@ export function KeyManager() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setShowKnownHostsModal(true)}
+            onClick={() => useLayoutStore.getState().setActivity("knownHosts")}
             className="border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:text-amber-300 gap-1.5 text-xs font-medium"
           >
             <ShieldCheck className="h-4 w-4" />
