@@ -2,6 +2,7 @@ import { clearTerminalScrollback } from "@/features/terminal/terminal-scrollback
 import { formatAppError, IpcError, ipc } from "@/lib/ipc/commands"
 import { useConnectionStore } from "@/stores/connection.store"
 import { useSessionStore } from "@/stores/session.store"
+import { useTofuStore } from "@/stores/tofu.store"
 import { toast } from "@/stores/toast.store"
 
 function errMessage(err: unknown): string {
@@ -56,6 +57,32 @@ export async function connectHost(
   try {
     await openSessionAndPane(hostId, opts)
   } catch (err) {
+    if (err instanceof IpcError && err.appError.kind === "FingerprintUnknown") {
+      const { host, port, fingerprint, fingerprintMd5, keyType } = err.appError
+      useTofuStore.getState().setPendingFingerprint({
+        hostId,
+        host,
+        port,
+        fingerprint,
+        fingerprintMd5,
+        keyType,
+        opts,
+      })
+      conn.setIdle(hostId)
+      return
+    }
+
+    if (err instanceof IpcError && err.appError.kind === "HostKeyChanged") {
+      const { expected, actual } = err.appError
+      useTofuStore.getState().setPendingHostKeyChanged({
+        hostId,
+        expected,
+        actual,
+      })
+      conn.setError(hostId, "Host key changed - security warning")
+      return
+    }
+
     if (needsKeyPassphrase(err)) {
       const pass = window.prompt(
         "This SSH key is encrypted.\n\nEnter the key passphrase (not your vault password).\nIt will be unlocked once and stored safely in the vault.",

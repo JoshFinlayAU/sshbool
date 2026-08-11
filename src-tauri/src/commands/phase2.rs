@@ -188,24 +188,40 @@ pub async fn auth_fido2_status() -> Result<Value, AppError> {
     }))
 }
 
+fn validate_safe_remote_path(path: &str) -> Result<String, AppError> {
+    if path.chars().any(|c| matches!(c, ';' | '&' | '|' | '`' | '$' | '(' | ')' | '\n' | '\r')) {
+        return Err(AppError::Validation {
+            field: "path".into(),
+            message: "path contains disallowed shell characters".into(),
+        });
+    }
+    let escaped = path.replace('\'', "'\\''");
+    Ok(format!("'{escaped}'"))
+}
+
+fn validate_container_id(id: &str) -> Result<&str, AppError> {
+    let valid = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+    if !valid {
+        return Err(AppError::Validation {
+            field: "container_id".into(),
+            message: "invalid container ID or name format".into(),
+        });
+    }
+    Ok(id)
+}
+
 #[tauri::command]
 pub async fn editor_git_status(
     state: State<'_, Arc<AppState>>,
     host_id: String,
     path: String,
 ) -> Result<String, AppError> {
-    let dir = if path.ends_with('/') {
-        path.trim_end_matches('/').to_string()
-    } else if let Some(i) = path.rfind('/') {
-        path[..i].to_string()
-    } else {
-        ".".into()
-    };
+    let safe_path = validate_safe_remote_path(&path)?;
     state
         .connections
         .exec_command(
             &host_id,
-            &format!("cd {dir} 2>/dev/null; git status -sb 2>&1; echo '---'; git diff --stat 2>&1 | head -n 40"),
+            &format!("cd {safe_path} 2>/dev/null; git status -sb 2>&1; echo '---'; git diff --stat 2>&1 | head -n 40"),
         )
         .await
         .map_err(Into::into)
@@ -217,9 +233,10 @@ pub async fn editor_diff(
     host_id: String,
     path: String,
 ) -> Result<String, AppError> {
+    let safe_path = validate_safe_remote_path(&path)?;
     state
         .connections
-        .exec_command(&host_id, &format!("git diff -- {path} 2>&1 | head -n 500"))
+        .exec_command(&host_id, &format!("git diff -- {safe_path} 2>&1 | head -n 500"))
         .await
         .map_err(Into::into)
 }
@@ -267,11 +284,12 @@ pub async fn docker_container_action(
     container_id: String,
     action: String,
 ) -> Result<(), AppError> {
+    let safe_id = validate_container_id(&container_id)?;
     let cmd = match action.as_str() {
-        "start" => format!("docker start {container_id}"),
-        "stop" => format!("docker stop {container_id}"),
-        "restart" => format!("docker restart {container_id}"),
-        "remove" => format!("docker rm -f {container_id}"),
+        "start" => format!("docker start {safe_id}"),
+        "stop" => format!("docker stop {safe_id}"),
+        "restart" => format!("docker restart {safe_id}"),
+        "remove" => format!("docker rm -f {safe_id}"),
         _ => {
             return Err(AppError::Validation {
                 field: "action".into(),
@@ -317,12 +335,13 @@ pub async fn docker_logs(
     container_id: String,
     tail: Option<u32>,
 ) -> Result<String, AppError> {
-    let n = tail.unwrap_or(200);
+    let safe_id = validate_container_id(&container_id)?;
+    let n = tail.unwrap_or(200).min(5000);
     state
         .connections
         .exec_command(
             &host_id,
-            &format!("docker logs --tail {n} {container_id} 2>&1"),
+            &format!("docker logs --tail {n} {safe_id} 2>&1"),
         )
         .await
         .map_err(Into::into)
@@ -335,7 +354,8 @@ pub async fn docker_compose_action(
     path: String,
     action: String,
 ) -> Result<String, AppError> {
-    let action = match action.as_str() {
+    let safe_path = validate_safe_remote_path(&path)?;
+    let action_str = match action.as_str() {
         "up" => "up -d",
         "down" => "down",
         "restart" => "restart",
@@ -351,7 +371,7 @@ pub async fn docker_compose_action(
         .connections
         .exec_command(
             &host_id,
-            &format!("cd $(dirname {path}) && docker compose -f $(basename {path}) {action} 2>&1"),
+            &format!("docker compose -f {safe_path} {action_str} 2>&1"),
         )
         .await
         .map_err(Into::into)

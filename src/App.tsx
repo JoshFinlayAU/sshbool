@@ -1,6 +1,7 @@
 import { useEffect, useMemo, type ReactNode } from "react"
 
 import { CommandPalette } from "@/components/command-palette/command-palette"
+import { FingerprintVerificationModal } from "@/components/ssh/fingerprint-modal"
 import { AppShell } from "@/components/layout/app-shell"
 import { AiPanel } from "@/features/ai/components/ai-panel"
 import { AuditPanel } from "@/features/audit/components/audit-panel"
@@ -461,6 +462,7 @@ export function App() {
         {activity === "settings" && <SettingsPanel />}
       </AppShell>
       <CommandPalette />
+      <FingerprintVerificationModal />
     </>
   )
 }

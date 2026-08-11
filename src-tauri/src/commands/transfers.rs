@@ -797,27 +797,67 @@ pub async fn local_rename(from: String, to: String) -> Result<(), AppError> {
         })
 }
 
+fn validate_local_delete_path(raw_path: &str) -> Result<PathBuf, AppError> {
+    let path = PathBuf::from(raw_path);
+    let canonical = path.canonicalize().map_err(|_| AppError::Validation {
+        field: "path".into(),
+        message: format!("path does not exist or is invalid: {raw_path}"),
+    })?;
+
+    // Block root and system critical directories
+    let blocked_prefixes = ["/", "/etc", "/bin", "/sbin", "/usr", "/lib", "/boot", "/dev", "/proc", "/sys", "/root", "/var", "/run"];
+    for blocked in blocked_prefixes {
+        if canonical == Path::new(blocked) {
+            return Err(AppError::Validation {
+                field: "path".into(),
+                message: format!("deletion of system path is strictly forbidden: {blocked}"),
+            });
+        }
+    }
+
+    // Must be inside user's home directory or app workspace
+    if let Some(home) = dirs::home_dir() {
+        if let Ok(canonical_home) = home.canonicalize() {
+            if canonical == canonical_home {
+                return Err(AppError::Validation {
+                    field: "path".into(),
+                    message: "deletion of home directory root is forbidden".into(),
+                });
+            }
+            if !canonical.starts_with(&canonical_home) {
+                return Err(AppError::Validation {
+                    field: "path".into(),
+                    message: "path is outside allowed home directory sandbox".into(),
+                });
+            }
+        }
+    }
+
+    Ok(canonical)
+}
+
 #[tauri::command]
 pub async fn local_delete(path: String, recursive: bool) -> Result<(), AppError> {
-    let meta = tokio::fs::metadata(&path).await.map_err(|e| AppError::Io {
+    let safe_path = validate_local_delete_path(&path)?;
+    let meta = tokio::fs::metadata(&safe_path).await.map_err(|e| AppError::Io {
         message: e.to_string(),
     })?;
     if meta.is_dir() {
         if recursive {
-            tokio::fs::remove_dir_all(&path)
+            tokio::fs::remove_dir_all(&safe_path)
                 .await
                 .map_err(|e| AppError::Io {
                     message: e.to_string(),
                 })
         } else {
-            tokio::fs::remove_dir(&path)
+            tokio::fs::remove_dir(&safe_path)
                 .await
                 .map_err(|e| AppError::Io {
                     message: e.to_string(),
                 })
         }
     } else {
-        tokio::fs::remove_file(&path)
+        tokio::fs::remove_file(&safe_path)
             .await
             .map_err(|e| AppError::Io {
                 message: e.to_string(),

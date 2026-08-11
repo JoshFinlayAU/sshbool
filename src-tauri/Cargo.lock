@@ -127,7 +127,7 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "application"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "async-trait",
  "domain",
@@ -1433,7 +1433,7 @@ dependencies = [
 
 [[package]]
 name = "domain"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "async-trait",
  "serde",
@@ -2837,7 +2837,7 @@ dependencies = [
 
 [[package]]
 name = "infrastructure"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
@@ -2851,6 +2851,7 @@ dependencies = [
  "domain",
  "futures",
  "hex",
+ "md5 0.7.0",
  "rand 0.8.7",
  "regex",
  "russh",
@@ -3243,6 +3244,12 @@ dependencies = [
  "cfg-if",
  "digest 0.10.7",
 ]
+
+[[package]]
+name = "md5"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
 name = "md5"
@@ -4847,7 +4854,7 @@ dependencies = [
  "internal-russh-num-bigint",
  "keccak",
  "log",
- "md5",
+ "md5 0.8.1",
  "ml-kem",
  "module-lattice",
  "num-bigint",
@@ -5971,7 +5978,7 @@ dependencies = [
 
 [[package]]
 name = "sshbool"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "application",
  "base64 0.22.1",
