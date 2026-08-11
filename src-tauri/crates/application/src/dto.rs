@@ -91,6 +91,8 @@ pub struct HostDto {
     pub proxy_id: Option<String>,
     /// Server password (unsealed from vault when loaded).
     pub password: Option<String>,
+    /// Whether a password is set in the vault.
+    pub has_password: Option<bool>,
     /// SSH key id (`auto` = latest vault key).
     pub ssh_key_id: Option<String>,
 }

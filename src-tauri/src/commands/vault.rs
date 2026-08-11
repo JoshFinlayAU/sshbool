@@ -615,6 +615,56 @@ pub async fn keys_export_private(
     Ok(serde_json::json!({ "pem": String::from_utf8_lossy(&pem) }))
 }
 
+fn validate_local_sandbox(path: &std::path::Path) -> Result<std::path::PathBuf, AppError> {
+    let home = dirs::home_dir().ok_or_else(|| AppError::Validation {
+        field: "path".into(),
+        message: "user home directory not found".into(),
+    })?;
+    let canonical_home = home.canonicalize().map_err(|e| AppError::Validation {
+        field: "path".into(),
+        message: format!("failed to canonicalize home directory: {e}"),
+    })?;
+
+    let mut check_path = path.to_path_buf();
+    while !check_path.exists() {
+        if let Some(parent) = check_path.parent() {
+            check_path = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+
+    let canonical_path = check_path.canonicalize().map_err(|e| AppError::Validation {
+        field: "path".into(),
+        message: format!("invalid path: {e}"),
+    })?;
+
+    if !canonical_path.starts_with(&canonical_home) {
+        return Err(AppError::Validation {
+            field: "path".into(),
+            message: "path lies outside of the user home directory sandbox".into(),
+        });
+    }
+
+    // Also block sensitive hidden files in the target filename
+    if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
+        let blocked = [
+            ".bashrc", ".bash_profile", ".bash_logout", ".profile",
+            ".zshrc", ".zprofile", ".zlogout", ".zshenv",
+            ".ssh", "authorized_keys", "id_rsa", "id_ecdsa", "id_ed25519",
+            ".sshbool", "sshbool.db"
+        ];
+        if blocked.iter().any(|&b| file_name.eq_ignore_ascii_case(b) || file_name.to_lowercase().contains(b)) {
+            return Err(AppError::Validation {
+                field: "path".into(),
+                message: format!("writing to sensitive file is strictly forbidden: {file_name}"),
+            });
+        }
+    }
+
+    Ok(canonical_path)
+}
+
 #[tauri::command]
 pub async fn keys_export_private_file(
     state: State<'_, Arc<AppState>>,
@@ -653,11 +703,26 @@ pub async fn keys_export_private_file(
     .bind(&id)
     .execute(state.vault.pool())
     .await;
-    tokio::fs::write(&path, &pem)
+
+    let target_path = std::path::PathBuf::from(&path);
+    validate_local_sandbox(&target_path)?;
+
+    tokio::fs::write(&target_path, &pem)
         .await
         .map_err(|e| AppError::Io {
             message: format!("write key file: {e}"),
         })?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&target_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            let _ = std::fs::set_permissions(&target_path, perms);
+        }
+    }
+
     Ok(())
 }
 

@@ -623,6 +623,20 @@ pub async fn services_list(
     Ok(services)
 }
 
+fn validate_systemd_unit(unit: &str) -> Result<(), AppError> {
+    let valid = !unit.is_empty()
+        && unit.len() <= 256
+        && unit.chars().all(|c| c.is_ascii_alphanumeric()
+            || matches!(c, '-' | '_' | '.' | '@' | ':'));
+    if !valid {
+        return Err(AppError::Validation {
+            field: "unit".into(),
+            message: "invalid systemd unit name".into(),
+        });
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn service_control(
     state: State<'_, Arc<AppState>>,
@@ -630,6 +644,7 @@ pub async fn service_control(
     unit: String,
     action: String,
 ) -> Result<(), AppError> {
+    validate_systemd_unit(&unit)?;
     let action = match action.as_str() {
         "start" | "stop" | "restart" => action,
         _ => {

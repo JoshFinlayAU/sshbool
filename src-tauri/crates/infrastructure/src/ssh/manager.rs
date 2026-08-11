@@ -1100,6 +1100,7 @@ impl ConnectionManager {
         Ok((key_id, pem))
     }
 
+    #[allow(dead_code)]
     async fn reseal_ssh_key(&self, key_id: &str, pem: &[u8]) -> Result<(), DomainError> {
         let (ct, nonce) = self
             .vault

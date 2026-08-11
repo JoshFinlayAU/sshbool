@@ -939,26 +939,38 @@ pub async fn devtools_run(
     host_id: String,
     command: String,
 ) -> Result<String, AppError> {
-    // Allowlisted diagnostic helpers only.
-    let allowed = [
-        "ping -c 3",
-        "dig +short",
-        "curl -I",
-        "nslookup",
-        "traceroute",
-    ];
-    if !allowed.iter().any(|p| command.starts_with(p)) {
+    let args: Vec<&str> = command.split_whitespace().collect();
+    if args.is_empty() {
         return Err(AppError::Validation {
             field: "command".into(),
-            message: format!("allowed prefixes: {}", allowed.join(", ")),
+            message: "command is empty".into(),
         });
     }
 
-    // Reject command chaining / execution control characters
-    if command.chars().any(|c| matches!(c, ';' | '&' | '|' | '`' | '$' | '(' | ')' | '{' | '}' | '<' | '>' | '\n' | '\r')) {
+    let is_valid_diagnostic = match args[0] {
+        "ping" => args.len() == 4 && args[1] == "-c" && args[2] == "3",
+        "dig" => args.len() == 3 && args[1] == "+short",
+        "curl" => args.len() == 3 && args[1] == "-I",
+        "nslookup" => args.len() == 2,
+        "traceroute" => args.len() == 2,
+        _ => false,
+    };
+
+    if !is_valid_diagnostic {
         return Err(AppError::Validation {
             field: "command".into(),
-            message: "command contains disallowed shell control characters".into(),
+            message: "invalid diagnostic command structure".into(),
+        });
+    }
+
+    // Validate that the target host argument is safe (no spaces, shell characters, or option flags)
+    let host_arg = args[args.len() - 1];
+    let host_safe = !host_arg.starts_with('-')
+        && host_arg.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':');
+    if !host_safe {
+        return Err(AppError::Validation {
+            field: "command".into(),
+            message: "invalid target host parameter".into(),
         });
     }
 
@@ -1515,6 +1527,7 @@ pub async fn plugins_uninstall(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn verify_plugin_capability(
     state: &AppState,
     plugin_id: &str,

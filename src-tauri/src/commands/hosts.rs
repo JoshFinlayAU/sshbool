@@ -90,6 +90,7 @@ fn map_host(
         jump_host_id,
         proxy_id,
         password: None,
+        has_password: None,
         ssh_key_id: None,
     }
 }
@@ -221,7 +222,7 @@ pub async fn hosts_get(state: State<'_, Arc<AppState>>, id: String) -> Result<Ho
         .ok()
         .flatten();
 
-    let mut password = None;
+    let mut password_set = false;
     if let Some((cid,)) = cred_id {
         let secret: Option<(Vec<u8>, Vec<u8>)> =
             sqlx::query_as("SELECT ciphertext, nonce FROM credentials WHERE id = ?")
@@ -230,14 +231,8 @@ pub async fn hosts_get(state: State<'_, Arc<AppState>>, id: String) -> Result<Ho
                 .await
                 .ok()
                 .flatten();
-        if let Some((ct, nonce)) = secret {
-            if let Ok(plain) = state
-                .vault
-                .open_secret(&ct, &nonce, &format!("cred:{cid}"))
-                .await
-            {
-                password = Some(String::from_utf8_lossy(&plain).into_owned());
-            }
+        if secret.is_some() {
+            password_set = true;
         }
     }
 
@@ -249,7 +244,8 @@ pub async fn hosts_get(state: State<'_, Arc<AppState>>, id: String) -> Result<Ho
         .flatten();
 
     let mut dto = host_from_row(h);
-    dto.password = password;
+    dto.password = if password_set { Some("••••••••".to_string()) } else { None };
+    dto.has_password = Some(password_set);
     dto.ssh_key_id = ssh_key_id.map(|(v,)| v);
     Ok(dto)
 }
@@ -400,7 +396,11 @@ pub async fn hosts_update(state: State<'_, Arc<AppState>>, host: HostDto) -> Res
             .ok()
             .flatten();
 
-    if let Some(password) = host.password.as_ref().filter(|p| !p.is_empty()) {
+    let is_placeholder = host.password.as_deref().unwrap_or("") == "••••••••";
+
+    if is_placeholder {
+        // Do nothing, password was not modified.
+    } else if let Some(password) = host.password.as_ref().filter(|p| !p.is_empty()) {
         if let Some((cred_id,)) = existing_cred {
             let (ct, nonce) = state
                 .vault

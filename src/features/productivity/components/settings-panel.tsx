@@ -118,9 +118,8 @@ export function SettingsPanel({ initial = "general" }: { initial?: Section }) {
           <button
             key={s}
             type="button"
-            className={`hover:bg-muted/60 w-full rounded-md px-2 py-1.5 text-left text-sm capitalize ${
-              section === s ? "bg-muted" : ""
-            }`}
+            className={`hover:bg-muted/60 w-full rounded-md px-2 py-1.5 text-left text-sm capitalize ${section === s ? "bg-muted" : ""
+              }`}
             onClick={() => setSection(s)}
           >
             {s === "hostKeys" ? "Host Keys" : s}
@@ -186,7 +185,7 @@ export function SettingsPanel({ initial = "general" }: { initial?: Section }) {
           <div className="space-y-2">
             <h2 className="font-semibold">About</h2>
             <p>
-              {info.data?.name ?? "SSHBool"} {info.data?.version ?? "0.1.0"}
+              {info.data?.name ?? "SSHBool"} {info.data?.version ?? "0.1.7"}
             </p>
             <p className="text-muted-foreground text-xs">
               Tauri {info.data?.tauriVersion ?? "2"}
@@ -205,7 +204,7 @@ export function SettingsPanel({ initial = "general" }: { initial?: Section }) {
           </div>
         )}
         {section === "security" && (
-           <SecuritySettings />
+          <SecuritySettings />
         )}
         {section === "terminal" && (
           <TerminalSettings />
@@ -216,41 +215,41 @@ export function SettingsPanel({ initial = "general" }: { initial?: Section }) {
         {!["general", "appearance", "terminal", "about", "updates", "security", "license", "team", "hostKeys"].includes(
           section,
         ) && (
-          <div>
-            <h2 className="font-semibold capitalize">{section}</h2>
-            <p className="text-muted-foreground mt-2 text-xs">
-              Settings for {section} are available and persisted via settings_get/set.
-            </p>
-          </div>
-        )}
+            <div>
+              <h2 className="font-semibold capitalize">{section}</h2>
+              <p className="text-muted-foreground mt-2 text-xs">
+                Settings for {section} are available and persisted via settings_get/set.
+              </p>
+            </div>
+          )}
       </div>
     </div>
   )
 }
 
-function FontSelector({ 
-  value, 
-  onChange, 
-  onSave, 
-  isSaving, 
-  label, 
-  description, 
-  popularFonts 
-}: { 
-  value: string; 
-  onChange: (v: string) => void; 
-  onSave: () => void; 
-  isSaving: boolean; 
-  label: string; 
-  description: string; 
-  popularFonts: string[] 
+function FontSelector({
+  value,
+  onChange,
+  onSave,
+  isSaving,
+  label,
+  description,
+  popularFonts
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSave: () => void;
+  isSaving: boolean;
+  label: string;
+  description: string;
+  popularFonts: string[]
 }) {
   return (
     <div className="space-y-3 max-w-md">
       <div>
         <h3 className="text-sm font-semibold">{label}</h3>
         <p className="text-muted-foreground mt-1 text-xs mb-3">{description}</p>
-        
+
         <div className="flex flex-wrap gap-2 mb-3">
           {popularFonts.map(f => (
             <button
@@ -260,9 +259,9 @@ function FontSelector({
                 // We don't auto-save here to let them see it in the input first, but we could.
               }}
               className={cn(
-                "px-2.5 py-1 text-xs rounded-md border transition-colors", 
-                value === f 
-                  ? "bg-primary text-primary-foreground border-primary" 
+                "px-2.5 py-1 text-xs rounded-md border transition-colors",
+                value === f
+                  ? "bg-primary text-primary-foreground border-primary"
                   : "hover:bg-muted bg-background border-border text-foreground"
               )}
             >
@@ -272,16 +271,16 @@ function FontSelector({
           <button
             onClick={() => onChange("")}
             className={cn(
-              "px-2.5 py-1 text-xs rounded-md border transition-colors", 
-              !value 
-                ? "bg-primary text-primary-foreground border-primary" 
+              "px-2.5 py-1 text-xs rounded-md border transition-colors",
+              !value
+                ? "bg-primary text-primary-foreground border-primary"
                 : "hover:bg-muted bg-background border-border text-foreground"
             )}
           >
             Default
           </button>
         </div>
-        
+
         <div className="flex gap-2">
           <input
             type="text"
@@ -303,8 +302,8 @@ function FontSelector({
             <span className="text-xs font-medium">Preview</span>
             <span className="text-[10px] text-muted-foreground">{value.trim() || "System Default"}</span>
           </div>
-          
-          <div 
+
+          <div
             className="px-3 py-3 space-y-2"
             style={{ fontFamily: value.trim() ? `"${value.trim()}", system-ui, sans-serif` : undefined }}
           >
@@ -332,7 +331,7 @@ function AppearanceSettings() {
 
   useEffect(() => setMounted(true), [])
 
-   const appFontQuery = useQuery({
+  const appFontQuery = useQuery({
     queryKey: ["settings", "appFont"],
     queryFn: () => ipc.settingsGet("appFont") as Promise<string | null>,
   })
@@ -365,7 +364,7 @@ function AppearanceSettings() {
   const POPULAR_FONTS = ["Inter", "Roboto", "Outfit", "Cairo", "Tajawal"]
 
   return (
-        <div className="space-y-6">
+    <div className="space-y-6">
       <div className="space-y-4">
         <div>
           <h2 className="font-semibold">Appearance</h2>
@@ -400,7 +399,7 @@ function AppearanceSettings() {
       </div>
 
       <div className="space-y-4 pt-4 border-t border-border">
-        <FontSelector 
+        <FontSelector
           label="App Font (Google Fonts)"
           description="Select a popular UI font or type any Google Font name to apply it to the whole app."
           value={appFont}
@@ -442,7 +441,7 @@ function TerminalSettings() {
         </div>
       </div>
       <div className="space-y-4 pt-4 border-t border-border">
-        <FontSelector 
+        <FontSelector
           label="Terminal Font (Google Fonts)"
           description="Select a popular coding font or type any Google Font name for the terminal."
           value={terminalFont}

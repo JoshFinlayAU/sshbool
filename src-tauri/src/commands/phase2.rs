@@ -659,6 +659,40 @@ pub async fn recording_stop(state: State<'_, Arc<AppState>>, id: String) -> Resu
     Ok(())
 }
 
+fn validate_local_sandbox(path: &std::path::Path) -> Result<std::path::PathBuf, AppError> {
+    let home = dirs::home_dir().ok_or_else(|| AppError::Validation {
+        field: "path".into(),
+        message: "user home directory not found".into(),
+    })?;
+    let canonical_home = home.canonicalize().map_err(|e| AppError::Validation {
+        field: "path".into(),
+        message: format!("failed to canonicalize home directory: {e}"),
+    })?;
+
+    let mut check_path = path.to_path_buf();
+    while !check_path.exists() {
+        if let Some(parent) = check_path.parent() {
+            check_path = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+
+    let canonical_path = check_path.canonicalize().map_err(|e| AppError::Validation {
+        field: "path".into(),
+        message: format!("invalid path: {e}"),
+    })?;
+
+    if !canonical_path.starts_with(&canonical_home) {
+        return Err(AppError::Validation {
+            field: "path".into(),
+            message: "path lies outside of the user home directory sandbox".into(),
+        });
+    }
+
+    Ok(canonical_path)
+}
+
 #[tauri::command]
 pub async fn folders_compare(
     state: State<'_, Arc<AppState>>,
@@ -666,6 +700,8 @@ pub async fn folders_compare(
     local_root: String,
     remote_root: String,
 ) -> Result<Value, AppError> {
+    let p_local = std::path::Path::new(&local_root);
+    validate_local_sandbox(p_local)?;
     let remote = state
         .connections
         .sftp_list_dir(&host_id, &remote_root)
@@ -692,6 +728,8 @@ pub async fn folders_compare(
 
 #[tauri::command]
 pub async fn rdp_launch_native(
+    state: State<'_, Arc<AppState>>,
+    host_id: Option<String>,
     host: String,
     port: u16,
     username: Option<String>,
@@ -706,9 +744,37 @@ pub async fn rdp_launch_native(
     performance: Option<String>,
 ) -> Result<(), AppError> {
     let u = username.unwrap_or_default();
-    let p = password.unwrap_or_default();
     let addr = format!("{host}:{port}");
 
+    let mut p = password.as_deref().unwrap_or("").to_string();
+    if p == "••••••••" || p.is_empty() {
+        if let Some(ref hid) = host_id {
+            let cred_id: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
+                .bind(format!("host:{hid}:cred"))
+                .fetch_optional(state.vault.pool())
+                .await
+                .ok()
+                .flatten();
+            if let Some((cid,)) = cred_id {
+                let secret: Option<(Vec<u8>, Vec<u8>)> =
+                    sqlx::query_as("SELECT ciphertext, nonce FROM credentials WHERE id = ?")
+                        .bind(&cid)
+                        .fetch_optional(state.vault.pool())
+                        .await
+                        .ok()
+                        .flatten();
+                if let Some((ct, nonce)) = secret {
+                    if let Ok(plain) = state
+                        .vault
+                        .open_secret(&ct, &nonce, &format!("cred:{cid}"))
+                        .await
+                    {
+                        p = String::from_utf8_lossy(&plain).into_owned();
+                    }
+                }
+            }
+        }
+    }
     #[cfg(target_os = "windows")]
     {
         use std::io::Write;
@@ -774,24 +840,28 @@ pub async fn rdp_launch_native(
         if let Ok(mut file) = std::fs::File::create(&temp_path) {
             let _ = file.write_all(rdp_content.as_bytes());
 
-            let mut args = vec!["/c", "start", "mstsc.exe", temp_path.to_str().unwrap_or("")];
+            let mut cmd = Command::new("mstsc.exe");
+            cmd.arg(temp_path.to_str().unwrap_or(""));
             if admin_mode.unwrap_or(false) {
-                args.push("/admin");
+                cmd.arg("/admin");
             }
             if full_screen.unwrap_or(false) {
-                args.push("/f");
+                cmd.arg("/f");
             }
-
-            let _ = Command::new("cmd").args(args).spawn();
+            let _ = cmd.spawn();
         } else {
-            let mut args = vec!["/c", "start", "mstsc.exe", "/v:", &addr];
-            if admin_mode.unwrap_or(false) {
-                args.push("/admin");
+            let safe_host = host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':');
+            if safe_host {
+                let mut cmd = Command::new("mstsc.exe");
+                cmd.arg(format!("/v:{addr}"));
+                if admin_mode.unwrap_or(false) {
+                    cmd.arg("/admin");
+                }
+                if full_screen.unwrap_or(false) {
+                    cmd.arg("/f");
+                }
+                let _ = cmd.spawn();
             }
-            if full_screen.unwrap_or(false) {
-                args.push("/f");
-            }
-            let _ = Command::new("cmd").args(args).spawn();
         }
     }
 
@@ -843,6 +913,7 @@ pub async fn rdp_launch_native(
     #[cfg(target_os = "linux")]
     {
         use std::process::Command;
+        use std::io::Write;
 
         let is_wayland = std::env::var("XDG_SESSION_TYPE")
             .map(|v| v.to_lowercase() == "wayland")
@@ -853,19 +924,23 @@ pub async fn rdp_launch_native(
         let h = height.unwrap_or(1080);
         let bpp = color_depth.unwrap_or(32);
         let perf_str = performance.as_deref().unwrap_or("auto");
-        let connection_val = match perf_str {
+        let _connection_val = match perf_str {
             "modem" => 1,
             "broadband" => 2,
             "lan" => 5,
             _ => 6, // auto
         };
 
+        let has_pass = !p.is_empty();
+
         let mut args = vec![
             format!("/v:{addr}"),
             format!("/u:{u}"),
-            "/from-stdin".to_string(),
             "/cert:tofu".to_string(),
         ];
+        if has_pass {
+            args.push("/from-stdin:force".to_string());
+        }
         if share_clipboard.unwrap_or(true) {
             args.push("+clipboard".to_string());
         } else {
@@ -890,9 +965,22 @@ pub async fn rdp_launch_native(
         if is_wayland {
             let mut cmd = Command::new("wlfreerdp");
             cmd.args(&args);
+            if has_pass {
+                cmd.stdin(std::process::Stdio::piped());
+            }
             match cmd.spawn() {
-                Ok(_) => {
+                Ok(mut child) => {
                     spawned = true;
+                    if has_pass {
+                        let p_clone = p.clone();
+                        std::thread::spawn(move || {
+                            if let Some(mut stdin) = child.stdin.take() {
+                                let _ = stdin.write_all(p_clone.as_bytes());
+                                let _ = stdin.flush();
+                            }
+                            let _ = child.wait();
+                        });
+                    }
                 }
                 Err(e) => {
                     last_error_msg = e.to_string();
@@ -904,9 +992,22 @@ pub async fn rdp_launch_native(
         if !spawned {
             let mut cmd = Command::new("xfreerdp");
             cmd.args(&args);
+            if has_pass {
+                cmd.stdin(std::process::Stdio::piped());
+            }
             match cmd.spawn() {
-                Ok(_) => {
+                Ok(mut child) => {
                     spawned = true;
+                    if has_pass {
+                        let p_clone = p.clone();
+                        std::thread::spawn(move || {
+                            if let Some(mut stdin) = child.stdin.take() {
+                                let _ = stdin.write_all(p_clone.as_bytes());
+                                let _ = stdin.flush();
+                            }
+                            let _ = child.wait();
+                        });
+                    }
                 }
                 Err(e) => {
                     last_error_msg = e.to_string();

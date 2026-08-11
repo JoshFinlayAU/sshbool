@@ -124,6 +124,7 @@ export function RemoteDesktopView({ hostId }: { hostId: string | null }) {
 
     try {
       await ipc.rdpLaunchNative(
+        hostId,
         targetHost,
         targetPort,
         targetUser,
