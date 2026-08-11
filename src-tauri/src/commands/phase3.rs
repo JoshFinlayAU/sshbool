@@ -1514,3 +1514,25 @@ pub async fn plugins_uninstall(
         .map_err(db)?;
     Ok(())
 }
+
+pub async fn verify_plugin_capability(
+    state: &AppState,
+    plugin_id: &str,
+    capability: &str,
+) -> Result<(), AppError> {
+    let row: Option<(i64,)> = sqlx::query_as(
+        "SELECT granted FROM plugin_permissions WHERE plugin_id = ? AND capability = ?",
+    )
+    .bind(plugin_id)
+    .bind(capability)
+    .fetch_optional(state.vault.pool())
+    .await
+    .map_err(db)?;
+
+    match row {
+        Some((1,)) => Ok(()),
+        _ => Err(AppError::Unauthorized {
+            reason: "plugin_permission_denied".into(),
+        }),
+    }
+}

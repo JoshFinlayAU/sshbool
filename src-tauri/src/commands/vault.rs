@@ -127,6 +127,23 @@ pub async fn keys_generate(
         },
         _ => Algorithm::Ed25519,
     };
+    let pass = dto
+        .passphrase
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| AppError::Validation {
+            field: "passphrase".into(),
+            message: "A passphrase is required to protect the generated private key".into(),
+        })?;
+
+    if pass.len() < 8 {
+        return Err(AppError::Validation {
+            field: "passphrase".into(),
+            message: "Passphrase must be at least 8 characters long".into(),
+        });
+    }
+
     let (public, pem) = {
         let mut rng = rand::thread_rng();
         let private = PrivateKey::random(&mut rng, alg).map_err(|e| AppError::Crypto {
@@ -138,12 +155,17 @@ pub async fn keys_generate(
             .map_err(|e| AppError::Crypto {
                 message: e.to_string(),
             })?;
-        let pem = private
+        let encrypted_key = private
+            .encrypt(&mut rng, pass)
+            .map_err(|e| AppError::Crypto {
+                message: format!("encrypt key: {e}"),
+            })?;
+        let pem = encrypted_key
             .to_openssh(LineEnding::LF)
             .map_err(|e| AppError::Crypto {
-                message: e.to_string(),
+                message: format!("encode encrypted key: {e}"),
             })?;
-        (public, pem)
+        (public, pem.to_string())
     };
     let fp = fingerprint_of(&public);
     let id = Uuid::now_v7().to_string();
@@ -155,7 +177,7 @@ pub async fn keys_generate(
     sqlx::query(
         r#"INSERT INTO ssh_keys
         (id, name, key_type, public_key, private_ciphertext, private_nonce, fingerprint_sha256, comment, has_passphrase, hardware_backed, source, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'generated', ?, ?)"#,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 'generated', ?, ?)"#,
     )
     .bind(&id)
     .bind(&dto.name)
@@ -165,11 +187,6 @@ pub async fn keys_generate(
     .bind(&nonce)
     .bind(&fp)
     .bind(&dto.comment)
-    .bind(if dto.passphrase.as_ref().map(|p| !p.is_empty()).unwrap_or(false) {
-        1
-    } else {
-        0
-    })
     .bind(now)
     .bind(now)
     .execute(state.vault.pool())
@@ -183,10 +200,10 @@ pub async fn keys_generate(
         id,
         name: dto.name,
         key_type: dto.key_type,
-        public_key: public,
+        public_key: public.to_string(),
         fingerprint_sha256: fp,
         comment: dto.comment,
-        has_passphrase: false,
+        has_passphrase: true,
         hardware_backed: false,
         source: "generated".into(),
         created_at: now,

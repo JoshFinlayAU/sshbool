@@ -9,10 +9,12 @@ import {
   KeyRound,
   Pencil,
   Trash2,
+  ShieldCheck,
 } from "lucide-react"
 import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import { KnownHostKeysManager } from "@/components/ssh/known-hosts-manager"
 import {
   Select,
   SelectContent,
@@ -217,9 +219,11 @@ export function KeyManager() {
   const canImport = !!importPath || (!!importContent.trim() && !!importName.trim())
   const keyCount = filteredKeys.length
 
+  const [showKnownHostsModal, setShowKnownHostsModal] = useState(false)
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <header className="border-border flex shrink-0 items-end justify-between gap-4 border-b px-5 py-3.5">
+      <header className="border-border flex shrink-0 items-center justify-between gap-4 border-b px-5 py-3.5">
         <div>
           <h2 className="text-base font-semibold tracking-tight">SSH Key Manager</h2>
           <p className="text-muted-foreground mt-0.5 text-xs">
@@ -227,13 +231,25 @@ export function KeyManager() {
             <code className="font-mono text-[11px]">authorized_keys</code>.
           </p>
         </div>
-        <div className="text-muted-foreground shrink-0 text-right text-[11px]">
-          <div className="text-foreground text-lg font-semibold tabular-nums leading-none">
-            {keyCount}
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowKnownHostsModal(true)}
+            className="border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:text-amber-300 gap-1.5 text-xs font-medium"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Host Keys Verification
+          </Button>
+          <div className="text-muted-foreground shrink-0 text-right text-[11px]">
+            <div className="text-foreground text-lg font-semibold tabular-nums leading-none">
+              {keyCount}
+            </div>
+            <div className="mt-0.5 uppercase tracking-wider">in workspace</div>
           </div>
-          <div className="mt-0.5 uppercase tracking-wider">in workspace</div>
         </div>
       </header>
+      <KnownHostKeysManager open={showKnownHostsModal} onClose={() => setShowKnownHostsModal(false)} />
 
       <div className="flex min-h-0 flex-1">
         {/* Actions rail — full height, not floating in the middle */}

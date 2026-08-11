@@ -32,6 +32,23 @@ pub async fn open_pool(db_path: &Path) -> Result<SqlitePool, DomainError> {
         .await
         .map_err(|e| DomainError::Crypto(e.to_string()))?;
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Some(parent) = db_path.parent() {
+            if let Ok(meta) = std::fs::metadata(parent) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o700);
+                let _ = std::fs::set_permissions(parent, perms);
+            }
+        }
+        if let Ok(meta) = std::fs::metadata(db_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            let _ = std::fs::set_permissions(db_path, perms);
+        }
+    }
+
     Ok(pool)
 }
 

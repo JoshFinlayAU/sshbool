@@ -112,23 +112,59 @@ async fn resolve_remote_dest(
     }
 }
 
-async fn resolve_local_dest(remote_path: &str, local_path: &str) -> Result<String, AppError> {
-    let file_name = Path::new(remote_path)
+fn sanitize_download_filename(name: &str) -> Result<String, AppError> {
+    let file_name = Path::new(name)
         .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("download.bin");
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| AppError::Validation {
+            field: "remote_path".into(),
+            message: "invalid remote filename".into(),
+        })?;
+
+    // Block dangerous filenames that could overwrite shell configurations or key files
+    let blocked_files = [
+        ".bashrc",
+        ".bash_profile",
+        ".profile",
+        ".zshrc",
+        "authorized_keys",
+        ".ssh",
+        "id_rsa",
+        "id_ed25519",
+    ];
+    if blocked_files.contains(&file_name) {
+        return Err(AppError::Validation {
+            field: "remote_path".into(),
+            message: format!("overwriting sensitive file is strictly forbidden: {file_name}"),
+        });
+    }
+
+    Ok(file_name.to_string())
+}
+
+async fn resolve_local_dest(remote_path: &str, local_path: &str) -> Result<String, AppError> {
+    if remote_path.contains("..") {
+        return Err(AppError::Validation {
+            field: "remote_path".into(),
+            message: "path traversal in remote path is forbidden".into(),
+        });
+    }
+
+    let file_name = sanitize_download_filename(remote_path)?;
     let p = PathBuf::from(local_path);
-    if local_path.ends_with('/')
+    let target = if local_path.ends_with('/')
         || local_path.ends_with('\\')
         || tokio::fs::metadata(&p)
             .await
             .map(|m| m.is_dir())
             .unwrap_or(false)
     {
-        Ok(p.join(file_name).to_string_lossy().into_owned())
+        p.join(&file_name)
     } else {
-        Ok(local_path.to_string())
-    }
+        p
+    };
+
+    Ok(target.to_string_lossy().into_owned())
 }
 
 async fn begin_job(

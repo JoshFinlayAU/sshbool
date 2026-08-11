@@ -288,7 +288,7 @@ impl ConnectionManager {
                 "SSH agent auth requires a running agent; use password or key for now".into(),
             )),
             "key" => {
-                let (key_id, priv_pem) = self.load_host_key(host_id).await?;
+                let (_key_id, priv_pem) = self.load_host_key(host_id).await?;
                 let key = match decode_secret_key(&priv_pem, key_passphrase) {
                     Ok(k) => k,
                     Err(e) => {
@@ -299,7 +299,7 @@ impl ConnectionManager {
                         if needs_pass && key_passphrase.is_none() {
                             return Err(DomainError::Validation {
                                 field: "keyPassphrase".into(),
-                                message: "The SSH private key is encrypted. Enter its passphrase to unlock it once — it will be stored unlocked in your vault."
+                                message: "The SSH private key is encrypted. Enter its passphrase to unlock it."
                                     .into(),
                             });
                         }
@@ -313,14 +313,6 @@ impl ConnectionManager {
                         return Err(DomainError::Crypto(format!("key decode: {msg}")));
                     }
                 };
-
-                // If the vault still held an encrypted PEM, rewrite as plaintext OpenSSH
-                // (still protected by vault AEAD) so the next connect needs no passphrase.
-                if key_passphrase.is_some() {
-                    if let Ok(openssh) = key.to_openssh(russh::keys::ssh_key::LineEnding::LF) {
-                        let _ = self.reseal_ssh_key(&key_id, openssh.as_bytes()).await;
-                    }
-                }
 
                 let hash = handle
                     .best_supported_rsa_hash()

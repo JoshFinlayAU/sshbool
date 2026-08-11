@@ -769,7 +769,8 @@ pub async fn rdp_launch_native(
              connection type:i:{connection_val}\r\n"
         );
 
-        let temp_path = std::env::temp_dir().join("sshbool_remote_desktop.rdp");
+        let temp_file_name = format!(".sshbool_rdp_{}.rdp", Uuid::now_v7());
+        let temp_path = std::env::temp_dir().join(&temp_file_name);
         if let Ok(mut file) = std::fs::File::create(&temp_path) {
             let _ = file.write_all(rdp_content.as_bytes());
 
@@ -826,7 +827,8 @@ pub async fn rdp_launch_native(
              session bpp:i:{bpp}\r\n"
         );
 
-        let temp_path = std::env::temp_dir().join("sshbool_remote_desktop.rdp");
+        let temp_file_name = format!(".sshbool_rdp_{}.rdp", Uuid::now_v7());
+        let temp_path = std::env::temp_dir().join(&temp_file_name);
         if let Ok(mut file) = std::fs::File::create(&temp_path) {
             let _ = file.write_all(rdp_content.as_bytes());
             let _ = Command::new("open").arg(&temp_path).spawn();
@@ -851,12 +853,18 @@ pub async fn rdp_launch_native(
         let h = height.unwrap_or(1080);
         let bpp = color_depth.unwrap_or(32);
         let perf_str = performance.as_deref().unwrap_or("auto");
+        let connection_val = match perf_str {
+            "modem" => 1,
+            "broadband" => 2,
+            "lan" => 5,
+            _ => 6, // auto
+        };
 
         let mut args = vec![
             format!("/v:{addr}"),
             format!("/u:{u}"),
-            format!("/p:{p}"),
-            "/cert-ignore".to_string(),
+            "/from-stdin".to_string(),
+            "/cert:tofu".to_string(),
         ];
         if share_clipboard.unwrap_or(true) {
             args.push("+clipboard".to_string());
@@ -871,12 +879,10 @@ pub async fn rdp_launch_native(
         }
         if full_screen.unwrap_or(false) {
             args.push("/f".to_string());
-        } else {
+        } else if width.is_some() || height.is_some() {
             args.push(format!("/size:{w}x{h}"));
         }
         args.push(format!("/bpp:{bpp}"));
-        args.push(format!("/network:{perf_str}"));
-
         let mut spawned = false;
         let mut last_error_msg = String::new();
 

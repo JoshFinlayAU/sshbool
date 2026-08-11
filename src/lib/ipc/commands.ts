@@ -131,6 +131,7 @@ export const ipc = {
   knownHostsList: () => call<KnownHostDto[]>("known_hosts_list"),
   knownHostsTrust: (host: string, port: number, fingerprint: string, keyType: string) =>
     call<void>("known_hosts_trust", { host, port, fingerprint, keyType }),
+  knownHostsDelete: (id: string) => call<void>("known_hosts_delete", { id }),
 
   sessionOpen: (hostId: string, keyPassphrase?: string | null) =>
     call<{ sessionId: string }>("session_open", {
