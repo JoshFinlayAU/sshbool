@@ -9,12 +9,12 @@
 /build
 /.next/
 /out/
-
+/docs
 # misc
 .DS_Store
 *.pem
 *.tsbuildinfo
-
+AGENTS.md
 # debug
 npm-debug.log*
 yarn-debug.log*
