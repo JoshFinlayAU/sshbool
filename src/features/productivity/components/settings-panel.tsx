@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Monitor, Moon, Sun, ShieldCheck } from "lucide-react"
+import { Monitor, Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select"
 import { ipc } from "@/lib/ipc/commands"
 import { cn } from "@/lib/utils"
-import { useLayoutStore } from "@/stores/layout.store"
+
 import { LicenseSettings } from "@/features/license/components/license-settings"
 
 const SECTIONS = [
