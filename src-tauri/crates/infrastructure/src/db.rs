@@ -32,6 +32,23 @@ pub async fn open_pool(db_path: &Path) -> Result<SqlitePool, DomainError> {
         .await
         .map_err(|e| DomainError::Crypto(e.to_string()))?;
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Some(parent) = db_path.parent() {
+            if let Ok(meta) = std::fs::metadata(parent) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o700);
+                let _ = std::fs::set_permissions(parent, perms);
+            }
+        }
+        if let Ok(meta) = std::fs::metadata(db_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            let _ = std::fs::set_permissions(db_path, perms);
+        }
+    }
+
     Ok(pool)
 }
 
@@ -56,6 +73,7 @@ pub async fn migrate(pool: &SqlitePool) -> Result<(), DomainError> {
         include_str!("../../../migrations/0015_team.sql"),
         include_str!("../../../migrations/0016_host_icon.sql"),
         include_str!("../../../migrations/0017_license_features.sql"),
+        include_str!("../../../migrations/0018_reset_unverified_known_hosts.sql"),
     ] {
         // Split on `;` and strip comment-only lines. Do NOT skip a whole chunk just because
         // it begins with a `--` header comment (that used to drop CREATE TABLE statements).

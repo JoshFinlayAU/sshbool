@@ -23,6 +23,7 @@ aes-gcm = "0.10"
 rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
+md5 = "0.7"
 base64 = "0.22"
 russh = { version = "0.62", default-features = false, features = ["flate2", "ring", "rsa"] }
 russh-sftp = "2.3"

@@ -112,23 +112,59 @@ async fn resolve_remote_dest(
     }
 }
 
-async fn resolve_local_dest(remote_path: &str, local_path: &str) -> Result<String, AppError> {
-    let file_name = Path::new(remote_path)
+fn sanitize_download_filename(name: &str) -> Result<String, AppError> {
+    let file_name = Path::new(name)
         .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("download.bin");
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| AppError::Validation {
+            field: "remote_path".into(),
+            message: "invalid remote filename".into(),
+        })?;
+
+    // Block dangerous filenames that could overwrite shell configurations or key files
+    let blocked_files = [
+        ".bashrc",
+        ".bash_profile",
+        ".profile",
+        ".zshrc",
+        "authorized_keys",
+        ".ssh",
+        "id_rsa",
+        "id_ed25519",
+    ];
+    if blocked_files.contains(&file_name) {
+        return Err(AppError::Validation {
+            field: "remote_path".into(),
+            message: format!("overwriting sensitive file is strictly forbidden: {file_name}"),
+        });
+    }
+
+    Ok(file_name.to_string())
+}
+
+async fn resolve_local_dest(remote_path: &str, local_path: &str) -> Result<String, AppError> {
+    if remote_path.contains("..") {
+        return Err(AppError::Validation {
+            field: "remote_path".into(),
+            message: "path traversal in remote path is forbidden".into(),
+        });
+    }
+
+    let file_name = sanitize_download_filename(remote_path)?;
     let p = PathBuf::from(local_path);
-    if local_path.ends_with('/')
+    let target = if local_path.ends_with('/')
         || local_path.ends_with('\\')
         || tokio::fs::metadata(&p)
             .await
             .map(|m| m.is_dir())
             .unwrap_or(false)
     {
-        Ok(p.join(file_name).to_string_lossy().into_owned())
+        p.join(&file_name)
     } else {
-        Ok(local_path.to_string())
-    }
+        p
+    };
+
+    Ok(target.to_string_lossy().into_owned())
 }
 
 async fn begin_job(
@@ -797,27 +833,67 @@ pub async fn local_rename(from: String, to: String) -> Result<(), AppError> {
         })
 }
 
+fn validate_local_delete_path(raw_path: &str) -> Result<PathBuf, AppError> {
+    let path = PathBuf::from(raw_path);
+    let canonical = path.canonicalize().map_err(|_| AppError::Validation {
+        field: "path".into(),
+        message: format!("path does not exist or is invalid: {raw_path}"),
+    })?;
+
+    // Block root and system critical directories
+    let blocked_prefixes = ["/", "/etc", "/bin", "/sbin", "/usr", "/lib", "/boot", "/dev", "/proc", "/sys", "/root", "/var", "/run"];
+    for blocked in blocked_prefixes {
+        if canonical == Path::new(blocked) {
+            return Err(AppError::Validation {
+                field: "path".into(),
+                message: format!("deletion of system path is strictly forbidden: {blocked}"),
+            });
+        }
+    }
+
+    // Must be inside user's home directory or app workspace
+    if let Some(home) = dirs::home_dir() {
+        if let Ok(canonical_home) = home.canonicalize() {
+            if canonical == canonical_home {
+                return Err(AppError::Validation {
+                    field: "path".into(),
+                    message: "deletion of home directory root is forbidden".into(),
+                });
+            }
+            if !canonical.starts_with(&canonical_home) {
+                return Err(AppError::Validation {
+                    field: "path".into(),
+                    message: "path is outside allowed home directory sandbox".into(),
+                });
+            }
+        }
+    }
+
+    Ok(canonical)
+}
+
 #[tauri::command]
 pub async fn local_delete(path: String, recursive: bool) -> Result<(), AppError> {
-    let meta = tokio::fs::metadata(&path).await.map_err(|e| AppError::Io {
+    let safe_path = validate_local_delete_path(&path)?;
+    let meta = tokio::fs::metadata(&safe_path).await.map_err(|e| AppError::Io {
         message: e.to_string(),
     })?;
     if meta.is_dir() {
         if recursive {
-            tokio::fs::remove_dir_all(&path)
+            tokio::fs::remove_dir_all(&safe_path)
                 .await
                 .map_err(|e| AppError::Io {
                     message: e.to_string(),
                 })
         } else {
-            tokio::fs::remove_dir(&path)
+            tokio::fs::remove_dir(&safe_path)
                 .await
                 .map_err(|e| AppError::Io {
                     message: e.to_string(),
                 })
         }
     } else {
-        tokio::fs::remove_file(&path)
+        tokio::fs::remove_file(&safe_path)
             .await
             .map_err(|e| AppError::Io {
                 message: e.to_string(),

@@ -1,39 +1,53 @@
 import { useQuery } from "@tanstack/react-query"
-import { ReactNode } from "react"
+import { ReactNode, useEffect } from "react"
 import { ipc } from "@/lib/ipc/commands"
+
+const ALLOWED_FONTS = new Set([
+  "Inter",
+  "Roboto",
+  "Ubuntu",
+  "JetBrains Mono",
+  "Fira Code",
+  "Source Code Pro",
+  "Cascadia Code",
+  "Noto Sans Arabic",
+  "IBM Plex Mono",
+  "Geist",
+  "system-ui",
+  "monospace",
+  "sans-serif",
+  "serif",
+])
+
+function sanitizeFontName(font?: string | null): string | null {
+  if (!font) return null
+  const trimmed = font.trim()
+  if (ALLOWED_FONTS.has(trimmed)) {
+    return trimmed
+  }
+  // Sanitize fallback to basic alphanumeric with spaces only
+  const safe = trimmed.replace(/[^a-zA-Z0-9 -]/g, "")
+  return safe.length > 0 ? safe : null
+}
+
 export function FontProvider({ children }: { children: ReactNode }) {
   const appFont = useQuery({
     queryKey: ["settings", "appFont"],
     queryFn: () => ipc.settingsGet("appFont") as Promise<string | null>,
   })
-  const terminalFont = useQuery({
-    queryKey: ["settings", "terminalFont"],
-    queryFn: () => ipc.settingsGet("terminalFont") as Promise<string | null>,
-  })
-  const appFontName = appFont.data?.trim()
-  const terminalFontName = terminalFont.data?.trim()
-  const fontsToLoad = new Set<string>()
-  if (appFontName) fontsToLoad.add(appFontName)
-  if (terminalFontName) fontsToLoad.add(terminalFontName)
-  const fontImports = Array.from(fontsToLoad)
-    .map(
-      (f) =>
-        `@import url('https://fonts.googleapis.com/css2?family=${f.replace(/ /g, "+")}:wght@400;500;600;700&display=swap');`,
-    )
-    .join("\n")
-  return (
-    <>
-      {fontsToLoad.size > 0 && (
-        <style dangerouslySetInnerHTML={{ __html: fontImports }} />
-      )}
-      {appFontName && (
-        <style
-          dangerouslySetInnerHTML={{
-            __html: `:root { --font-sans: "${appFontName}", system-ui, sans-serif !important; }`,
-          }}
-        />
-      )}
-      {children}
-    </>
-  )
+
+  const appFontName = sanitizeFontName(appFont.data)
+
+  useEffect(() => {
+    if (appFontName) {
+      document.documentElement.style.setProperty(
+        "--font-sans",
+        `"${appFontName}", system-ui, sans-serif`
+      )
+    } else {
+      document.documentElement.style.removeProperty("--font-sans")
+    }
+  }, [appFontName])
+
+  return <>{children}</>
 }

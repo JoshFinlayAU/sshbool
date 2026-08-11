@@ -30,6 +30,15 @@ pub enum AppError {
         expected: String,
         actual: String,
     },
+    FingerprintUnknown {
+        host: String,
+        port: u16,
+        fingerprint: String,
+        #[serde(rename = "fingerprintMd5")]
+        fingerprint_md5: Option<String>,
+        #[serde(rename = "keyType")]
+        key_type: String,
+    },
     Connection {
         message: String,
         retryable: bool,
@@ -86,6 +95,24 @@ impl From<DomainError> for AppError {
             DomainError::Canceled => Self::Conflict {
                 message: "canceled".into(),
             },
+            DomainError::FingerprintUnknown {
+                host,
+                port,
+                fingerprint,
+                fingerprint_md5,
+                key_type,
+            } => Self::FingerprintUnknown {
+                host,
+                port,
+                fingerprint,
+                fingerprint_md5,
+                key_type,
+            },
+            DomainError::HostKeyChanged {
+                host: _,
+                expected,
+                actual,
+            } => Self::HostKeyChanged { expected, actual },
         }
     }
 }

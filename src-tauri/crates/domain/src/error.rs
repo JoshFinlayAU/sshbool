@@ -33,4 +33,28 @@ pub enum DomainError {
     /// Operation was canceled by the user.
     #[error("canceled")]
     Canceled,
+    /// Host fingerprint needs verification before connection.
+    #[error("fingerprint_unknown")]
+    FingerprintUnknown {
+        /// Target hostname or IP.
+        host: String,
+        /// Target port.
+        port: u16,
+        /// SHA-256 fingerprint string.
+        fingerprint: String,
+        /// MD5 fingerprint string (formatted hex pairs).
+        fingerprint_md5: Option<String>,
+        /// Key algorithm type.
+        key_type: String,
+    },
+    /// Host key has changed compared to known_hosts.
+    #[error("host_key_changed")]
+    HostKeyChanged {
+        /// Target hostname or IP.
+        host: String,
+        /// Expected fingerprint string.
+        expected: String,
+        /// Actual fingerprint string.
+        actual: String,
+    },
 }

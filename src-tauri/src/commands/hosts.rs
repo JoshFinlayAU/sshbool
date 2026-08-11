@@ -838,6 +838,19 @@ pub async fn known_hosts_list(
 }
 
 #[tauri::command]
+pub async fn known_hosts_delete(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM known_hosts WHERE id = ?")
+        .bind(&id)
+        .execute(state.vault.pool())
+        .await
+        .map_err(db)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn known_hosts_trust(
     state: State<'_, Arc<AppState>>,
     host: String,

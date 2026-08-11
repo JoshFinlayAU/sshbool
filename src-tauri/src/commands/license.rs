@@ -38,7 +38,8 @@ pub struct LicenseClaims {
 
 /// Parse `base64(claims).base64(signature)` and verify Ed25519.
 pub fn verify_license_token(token: &str) -> Result<LicenseClaims, AppError> {
-    // Development mode: accept unsigned JSON prefixed with "dev:" for local testing.
+    // Development mode: accept unsigned JSON prefixed with "dev:" only during local debug builds.
+    #[cfg(debug_assertions)]
     if let Some(json) = token.strip_prefix("dev:") {
         let claims: LicenseClaims =
             serde_json::from_str(json).map_err(|e| AppError::Validation {

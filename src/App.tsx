@@ -1,6 +1,7 @@
 import { useEffect, useMemo, type ReactNode } from "react"
 
 import { CommandPalette } from "@/components/command-palette/command-palette"
+import { FingerprintVerificationModal } from "@/components/ssh/fingerprint-modal"
 import { AppShell } from "@/components/layout/app-shell"
 import { AiPanel } from "@/features/ai/components/ai-panel"
 import { AuditPanel } from "@/features/audit/components/audit-panel"
@@ -19,6 +20,7 @@ import { SftpExplorer } from "@/features/sftp/components/sftp-explorer"
 import { SyncPanel } from "@/features/sync/components/sync-panel"
 import { TerminalWorkspace } from "@/features/terminal/components/terminal-workspace"
 import { KeyManager } from "@/features/vault/components/key-manager"
+import { KnownHostKeysPanel } from "@/features/vault/components/known-hosts-panel"
 import { UnlockScreen } from "@/features/vault/components/unlock-screen"
 import { useEvent } from "@/hooks/use-event"
 import { useTaskbarTransferProgress } from "@/hooks/use-taskbar-transfer-progress"
@@ -455,12 +457,14 @@ export function App() {
           ))}
         {activity === "ai" && <AiPanel />}
         {activity === "keys" && <KeyManager />}
+        {activity === "knownHosts" && <KnownHostKeysPanel />}
         {activity === "plugins" && <PluginsPanel />}
         {activity === "audit" && <AuditPanel />}
         {activity === "sync" && <SyncPanel />}
         {activity === "settings" && <SettingsPanel />}
       </AppShell>
       <CommandPalette />
+      <FingerprintVerificationModal />
     </>
   )
 }

@@ -21,7 +21,7 @@ Instead, please report them by sending an email to our security team or the main
 
 SSHBool is designed with a defense-in-depth approach to protect user credentials, connections, and metadata:
 
-- **Local Encryption:** The entire SQLite database is encrypted at rest using SQLCipher (AES-256) with keys derived from a Master Password (via Argon2id).
+- **Local Encryption at Rest:** Sensitive credentials, private keys, and secrets stored in the local SQLite database are individually encrypted at rest using application-layer AEAD (AES-256-GCM) with Data Encryption Keys (DEK) derived from the Master Password via Argon2id.
 - **Secure Memory:** Sensitive keys and passwords are held in zeroizing wrappers (`secrecy`/`zeroize`) that scrub memory upon drop, minimizing exposure to memory-reading malware.
 - **Biometric Integration:** Support for OS-level biometric authentication (Windows Hello, TouchID, Linux Secret Service) to securely unwrap the Data Encryption Key (DEK).
 - **Capability Sandboxing:** The Tauri frontend is strictly sandboxed. There is no ambient filesystem or shell access from the webview; all privileged actions route through strictly-typed Rust commands.

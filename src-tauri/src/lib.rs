@@ -281,6 +281,7 @@ pub fn run() {
             commands::hosts::tags_remove,
             commands::hosts::known_hosts_list,
             commands::hosts::known_hosts_trust,
+            commands::hosts::known_hosts_delete,
             commands::hosts::session_open,
             commands::hosts::session_close,
             commands::sessions::pane_open,

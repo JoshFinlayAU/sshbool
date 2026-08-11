@@ -200,15 +200,33 @@ fn build_db_cmd(conn: &DbConn, sql: &str, structured: bool) -> Result<String, Ap
                 conn.host, conn.port, conn.username
             ))
         }
-        "redis" => Ok(format!(
-            "redis-cli -h {} -p {} {} 2>&1",
-            conn.host, conn.port, sql
-        )),
+        "redis" => {
+            let cmd_name = sql.trim().split_whitespace().next().unwrap_or("").to_uppercase();
+            let blocked = ["CONFIG", "SLAVEOF", "REPLICAOF", "MODULE", "EVAL", "EVALSHA", "DEBUG", "SHUTDOWN", "SCRIPT"];
+            if blocked.contains(&cmd_name.as_str()) {
+                return Err(AppError::Validation {
+                    field: "sql".into(),
+                    message: format!("forbidden Redis command: {cmd_name}"),
+                });
+            }
+            let sql_escaped = shell_escape_single_quoted(sql);
+            Ok(format!("redis-cli -h {} -p {} '{sql_escaped}' 2>&1", conn.host, conn.port))
+        }
         "mongo" | "mongodb" => Ok(format!(
             "mongosh --quiet mongodb://{}:{}/{} --eval '{sql_escaped}' 2>&1",
             conn.host, conn.port, conn.database
         )),
-        "sqlite" => Ok(format!("sqlite3 {} '{sql_escaped}' 2>&1", conn.database)),
+        "sqlite" => {
+            let sql_upper = sql.to_uppercase();
+            if sql_upper.contains(".SHELL") || sql_upper.contains(".SYSTEM") || sql_upper.contains(".LOAD") {
+                return Err(AppError::Validation {
+                    field: "sql".into(),
+                    message: "disallowed SQLite dot shell commands".into(),
+                });
+            }
+            let db_escaped = shell_escape_single_quoted(&conn.database);
+            Ok(format!("sqlite3 '{db_escaped}' '{sql_escaped}' 2>&1"))
+        }
         other => Err(AppError::Validation {
             field: "engine".into(),
             message: format!("unsupported engine: {other}"),
@@ -725,6 +743,17 @@ pub async fn k8s_contexts_list(
         .collect())
 }
 
+fn validate_k8s_name<'a>(name: &'a str, field_name: &'static str) -> Result<&'a str, AppError> {
+    let valid = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_');
+    if !valid {
+        return Err(AppError::Validation {
+            field: field_name.into(),
+            message: format!("invalid {field_name} format"),
+        });
+    }
+    Ok(name)
+}
+
 #[tauri::command]
 pub async fn k8s_get_pods(
     state: State<'_, Arc<AppState>>,
@@ -732,12 +761,13 @@ pub async fn k8s_get_pods(
     namespace: Option<String>,
 ) -> Result<Vec<Value>, AppError> {
     let ns = namespace.unwrap_or_else(|| "default".into());
+    let safe_ns = validate_k8s_name(&ns, "namespace")?;
     let out = state
         .connections
         .exec_command(
             &host_id,
             &format!(
-                "kubectl get pods -n {ns} -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,READY:.status.containerStatuses[*].ready,RESTARTS:.status.containerStatuses[*].restartCount,AGE:.metadata.creationTimestamp --no-headers 2>&1"
+                "kubectl get pods -n {safe_ns} -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,READY:.status.containerStatuses[*].ready,RESTARTS:.status.containerStatuses[*].restartCount,AGE:.metadata.creationTimestamp --no-headers 2>&1"
             ),
         )
         .await?;
@@ -766,11 +796,12 @@ pub async fn k8s_get_deployments(
     namespace: Option<String>,
 ) -> Result<Vec<Value>, AppError> {
     let ns = namespace.unwrap_or_else(|| "default".into());
+    let safe_ns = validate_k8s_name(&ns, "namespace")?;
     let out = state
         .connections
         .exec_command(
             &host_id,
-            &format!("kubectl get deploy -n {ns} --no-headers 2>&1"),
+            &format!("kubectl get deploy -n {safe_ns} --no-headers 2>&1"),
         )
         .await?;
     Ok(out
@@ -800,12 +831,14 @@ pub async fn k8s_logs(
     pod: String,
     tail: Option<u32>,
 ) -> Result<String, AppError> {
-    let n = tail.unwrap_or(100);
+    let safe_ns = validate_k8s_name(&namespace, "namespace")?;
+    let safe_pod = validate_k8s_name(&pod, "pod")?;
+    let n = tail.unwrap_or(100).min(5000);
     state
         .connections
         .exec_command(
             &host_id,
-            &format!("kubectl logs -n {namespace} {pod} --tail={n} 2>&1"),
+            &format!("kubectl logs -n {safe_ns} {safe_pod} --tail={n} 2>&1"),
         )
         .await
         .map_err(Into::into)
@@ -883,11 +916,18 @@ pub async fn devtools_git_status(
     host_id: String,
     path: String,
 ) -> Result<String, AppError> {
+    if path.chars().any(|c| matches!(c, ';' | '&' | '|' | '`' | '$' | '(' | ')' | '\n' | '\r')) {
+        return Err(AppError::Validation {
+            field: "path".into(),
+            message: "path contains disallowed shell characters".into(),
+        });
+    }
+    let safe_path = path.replace('\'', "'\\''");
     state
         .connections
         .exec_command(
             &host_id,
-            &format!("cd {path} && git status -sb && git remote -v 2>&1"),
+            &format!("cd '{safe_path}' 2>/dev/null; git status -sb 2>&1; echo '---'; git diff --stat 2>&1 | head -n 40"),
         )
         .await
         .map_err(Into::into)
@@ -913,6 +953,15 @@ pub async fn devtools_run(
             message: format!("allowed prefixes: {}", allowed.join(", ")),
         });
     }
+
+    // Reject command chaining / execution control characters
+    if command.chars().any(|c| matches!(c, ';' | '&' | '|' | '`' | '$' | '(' | ')' | '{' | '}' | '<' | '>' | '\n' | '\r')) {
+        return Err(AppError::Validation {
+            field: "command".into(),
+            message: "command contains disallowed shell control characters".into(),
+        });
+    }
+
     state
         .connections
         .exec_command(&host_id, &command)
@@ -1464,4 +1513,26 @@ pub async fn plugins_uninstall(
         .await
         .map_err(db)?;
     Ok(())
+}
+
+pub async fn verify_plugin_capability(
+    state: &AppState,
+    plugin_id: &str,
+    capability: &str,
+) -> Result<(), AppError> {
+    let row: Option<(i64,)> = sqlx::query_as(
+        "SELECT granted FROM plugin_permissions WHERE plugin_id = ? AND capability = ?",
+    )
+    .bind(plugin_id)
+    .bind(capability)
+    .fetch_optional(state.vault.pool())
+    .await
+    .map_err(db)?;
+
+    match row {
+        Some((1,)) => Ok(()),
+        _ => Err(AppError::Unauthorized {
+            reason: "plugin_permission_denied".into(),
+        }),
+    }
 }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use domain::DomainError;
 use russh::client::{self, AuthResult, Handle};
-use russh::keys::{decode_secret_key, HashAlg, PrivateKeyWithHashAlg, PublicKey};
+use russh::keys::{decode_secret_key, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyBase64};
 use russh::ChannelMsg;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use uuid::Uuid;
@@ -14,7 +14,7 @@ use crate::vault::VaultService;
 
 struct ClientHandler {
     expected_fp: Option<String>,
-    learned_fp: Arc<Mutex<Option<(String, String)>>>,
+    learned_fp: Arc<Mutex<Option<(String, String, String)>>>,
 }
 
 impl client::Handler for ClientHandler {
@@ -24,20 +24,41 @@ impl client::Handler for ClientHandler {
         &mut self,
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        let fp = fingerprint_sha256(server_public_key);
+        let fp_sha256 = fingerprint_sha256(server_public_key);
+        let fp_md5 = fingerprint_md5(server_public_key);
         let key_type = server_public_key.algorithm().to_string();
-        *self.learned_fp.lock().await = Some((fp.clone(), key_type));
+        *self.learned_fp.lock().await = Some((fp_sha256.clone(), fp_md5, key_type));
         if let Some(expected) = &self.expected_fp {
-            Ok(expected == &fp)
+            if expected == &fp_sha256 {
+                Ok(true)
+            } else {
+                tracing::warn!("SSH host key mismatch! expected={}, received={}", expected, fp_sha256);
+                Ok(false)
+            }
         } else {
+            tracing::info!("First-time SSH connection host fingerprint learned: {}", fp_sha256);
             Ok(true)
         }
     }
 }
 
 fn fingerprint_sha256(key: &PublicKey) -> String {
-    let fp = key.fingerprint(HashAlg::Sha256);
-    format!("SHA256:{fp}")
+    let raw = key.fingerprint(HashAlg::Sha256).to_string();
+    if raw.starts_with("SHA256:") {
+        raw
+    } else {
+        format!("SHA256:{raw}")
+    }
+}
+
+fn fingerprint_md5(key: &PublicKey) -> String {
+    let digest = md5::compute(key.public_key_bytes());
+    digest
+        .0
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(":")
 }
 
 struct LiveSession {
@@ -189,22 +210,24 @@ impl ConnectionManager {
             return Err(DomainError::Unauthorized("bad_password"));
         }
 
-        if let Some((fp, key_type)) = learned_fp.lock().await.clone() {
-            if known.is_none() {
-                let id = Uuid::now_v7().to_string();
-                let now = chrono::Utc::now().timestamp_millis();
-                let _ = sqlx::query(
-                    "INSERT INTO known_hosts (id, host, port, key_type, fingerprint_sha256, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                )
-                .bind(&id)
-                .bind(&hostname)
-                .bind(port as i64)
-                .bind(&key_type)
-                .bind(&fp)
-                .bind(now)
-                .bind(now)
-                .execute(self.vault.pool())
-                .await;
+        if let Some((fp, fp_md5, key_type)) = learned_fp.lock().await.clone() {
+            if let Some((expected,)) = known {
+                if expected != fp {
+                    return Err(DomainError::HostKeyChanged {
+                        host: hostname.clone(),
+                        expected,
+                        actual: fp,
+                    });
+                }
+            } else {
+                // Host key is unknown / untrusted yet: Disconnect and require explicit user trust
+                return Err(DomainError::FingerprintUnknown {
+                    host: hostname.clone(),
+                    port,
+                    fingerprint: fp,
+                    fingerprint_md5: Some(fp_md5),
+                    key_type,
+                });
             }
         }
 
@@ -265,7 +288,7 @@ impl ConnectionManager {
                 "SSH agent auth requires a running agent; use password or key for now".into(),
             )),
             "key" => {
-                let (key_id, priv_pem) = self.load_host_key(host_id).await?;
+                let (_key_id, priv_pem) = self.load_host_key(host_id).await?;
                 let key = match decode_secret_key(&priv_pem, key_passphrase) {
                     Ok(k) => k,
                     Err(e) => {
@@ -276,7 +299,7 @@ impl ConnectionManager {
                         if needs_pass && key_passphrase.is_none() {
                             return Err(DomainError::Validation {
                                 field: "keyPassphrase".into(),
-                                message: "The SSH private key is encrypted. Enter its passphrase to unlock it once — it will be stored unlocked in your vault."
+                                message: "The SSH private key is encrypted. Enter its passphrase to unlock it."
                                     .into(),
                             });
                         }
@@ -290,14 +313,6 @@ impl ConnectionManager {
                         return Err(DomainError::Crypto(format!("key decode: {msg}")));
                     }
                 };
-
-                // If the vault still held an encrypted PEM, rewrite as plaintext OpenSSH
-                // (still protected by vault AEAD) so the next connect needs no passphrase.
-                if key_passphrase.is_some() {
-                    if let Ok(openssh) = key.to_openssh(russh::keys::ssh_key::LineEnding::LF) {
-                        let _ = self.reseal_ssh_key(&key_id, openssh.as_bytes()).await;
-                    }
-                }
 
                 let hash = handle
                     .best_supported_rsa_hash()
