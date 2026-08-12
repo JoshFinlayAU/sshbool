@@ -142,6 +142,40 @@ fn sanitize_download_filename(name: &str) -> Result<String, AppError> {
     Ok(file_name.to_string())
 }
 
+fn validate_local_sandbox(path: &Path) -> Result<PathBuf, AppError> {
+    let home = dirs::home_dir().ok_or_else(|| AppError::Validation {
+        field: "path".into(),
+        message: "user home directory not found".into(),
+    })?;
+    let canonical_home = home.canonicalize().map_err(|e| AppError::Validation {
+        field: "path".into(),
+        message: format!("failed to canonicalize home directory: {e}"),
+    })?;
+
+    let mut check_path = path.to_path_buf();
+    while !check_path.exists() {
+        if let Some(parent) = check_path.parent() {
+            check_path = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+
+    let canonical_path = check_path.canonicalize().map_err(|e| AppError::Validation {
+        field: "path".into(),
+        message: format!("invalid path: {e}"),
+    })?;
+
+    if !canonical_path.starts_with(&canonical_home) {
+        return Err(AppError::Validation {
+            field: "path".into(),
+            message: "path lies outside of the user home directory sandbox".into(),
+        });
+    }
+
+    Ok(canonical_path)
+}
+
 async fn resolve_local_dest(remote_path: &str, local_path: &str) -> Result<String, AppError> {
     if remote_path.contains("..") {
         return Err(AppError::Validation {
@@ -163,6 +197,22 @@ async fn resolve_local_dest(remote_path: &str, local_path: &str) -> Result<Strin
     } else {
         p
     };
+
+    validate_local_sandbox(&target)?;
+
+    // Also block sensitive filename if target was passed directly
+    if let Some(target_file) = target.file_name().and_then(|s| s.to_str()) {
+        let blocked_files = [
+            ".bashrc", ".bash_profile", ".profile", ".zshrc",
+            "authorized_keys", ".ssh", "id_rsa", "id_ed25519"
+        ];
+        if blocked_files.contains(&target_file) {
+            return Err(AppError::Validation {
+                field: "local_path".into(),
+                message: format!("overwriting sensitive file is strictly forbidden: {target_file}"),
+            });
+        }
+    }
 
     Ok(target.to_string_lossy().into_owned())
 }
@@ -772,6 +822,7 @@ pub async fn local_list_dir(path: String) -> Result<Vec<SftpEntryDto>, AppError>
     } else {
         PathBuf::from(&path)
     };
+    validate_local_sandbox(&root)?;
     let mut rd = tokio::fs::read_dir(&root).await.map_err(|e| AppError::Io {
         message: e.to_string(),
     })?;
@@ -817,7 +868,9 @@ pub async fn local_list_dir(path: String) -> Result<Vec<SftpEntryDto>, AppError>
 
 #[tauri::command]
 pub async fn local_mkdir(path: String) -> Result<(), AppError> {
-    tokio::fs::create_dir_all(&path)
+    let p = PathBuf::from(&path);
+    validate_local_sandbox(&p)?;
+    tokio::fs::create_dir_all(&p)
         .await
         .map_err(|e| AppError::Io {
             message: e.to_string(),
@@ -826,7 +879,11 @@ pub async fn local_mkdir(path: String) -> Result<(), AppError> {
 
 #[tauri::command]
 pub async fn local_rename(from: String, to: String) -> Result<(), AppError> {
-    tokio::fs::rename(&from, &to)
+    let p_from = PathBuf::from(&from);
+    let p_to = PathBuf::from(&to);
+    validate_local_sandbox(&p_from)?;
+    validate_local_sandbox(&p_to)?;
+    tokio::fs::rename(&p_from, &p_to)
         .await
         .map_err(|e| AppError::Io {
             message: e.to_string(),

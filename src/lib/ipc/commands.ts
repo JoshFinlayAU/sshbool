@@ -141,6 +141,7 @@ export const ipc = {
   sessionClose: (sessionId: string) => call<void>("session_close", { sessionId }),
 
   rdpLaunchNative: (
+    hostId: string | null,
     host: string,
     port: number,
     username?: string,
@@ -155,6 +156,7 @@ export const ipc = {
     performance?: string,
   ) =>
     call<void>("rdp_launch_native", {
+      hostId: hostId ?? null,
       host,
       port,
       username: username ?? null,

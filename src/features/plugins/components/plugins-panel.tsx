@@ -71,7 +71,7 @@ export function PluginsPanel() {
                 install.mutate({
                   slug: item.slug,
                   name: item.name,
-                  version: item.version ?? "0.1.0",
+                  version: item.version ?? "0.1.7",
                   permissions: item.permissions ?? [],
                   paid: item.paid ?? false,
                 })
@@ -88,7 +88,7 @@ export function PluginsPanel() {
             install.mutate({
               slug: "sample-theme",
               name: "Sample Theme",
-              version: "0.1.0",
+              version: "0.1.7",
               permissions: ["ui.theme"],
             })
           }

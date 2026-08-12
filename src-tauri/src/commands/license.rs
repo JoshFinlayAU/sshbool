@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::State;
-use uuid::Uuid;
 
 use crate::error::AppError;
 
@@ -154,32 +153,6 @@ fn ed25519_verify(pubkey: &[u8; 32], message: &[u8], signature: &[u8]) -> bool {
         return false;
     };
     key.verify(message, &sig).is_ok()
-}
-
-fn features_for_tier(tier: &str) -> Vec<&'static str> {
-    match tier {
-        "team" => vec![
-            "unlimited_hosts",
-            "editor",
-            "dashboard",
-            "docker",
-            "ai",
-            "sync",
-            "team",
-            "marketplace_paid",
-            "audit_agg",
-        ],
-        "pro" | "lifetime" | "ultimate" | "enterprise" | "basic" => vec![
-            "unlimited_hosts",
-            "editor",
-            "dashboard",
-            "docker",
-            "ai",
-            "sync",
-            "marketplace_paid",
-        ],
-        _ => vec!["core_ssh", "sftp", "terminal", "keys", "vault"],
-    }
 }
 
 use sha2::{Digest, Sha256};

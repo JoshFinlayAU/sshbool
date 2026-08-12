@@ -52,7 +52,7 @@ export function App() {
   // Activation & Licensing States
   const [isActivated, setIsActivated] = useState<boolean | null>(null)
   const [activationUrl, setActivationUrl] = useState<string | null>(null)
-  const [appInfo, setAppInfo] = useState<{ version: string; [key: string]: unknown } | null>(null)
+  const [appInfo, setAppInfo] = useState<{ version: string;[key: string]: unknown } | null>(null)
 
   // One SFTP explorer per host so remote listings never mix across servers.
   const sftpHostIds = useMemo(() => {
@@ -249,13 +249,13 @@ export function App() {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-background text-foreground p-6 font-sans select-none">
         <div className="max-w-md w-full space-y-6">
-          
+
           {/* Header section */}
           <div className="space-y-2 text-center">
             <div className="mx-auto size-12 rounded-xl bg-muted/50 border border-border flex items-center justify-center shadow-sm">
               <KeyRound className="size-5 text-muted-foreground" />
             </div>
-            
+
             <h1 className="text-xl font-semibold tracking-tight text-foreground">
               Activate SSHBool
             </h1>
@@ -266,7 +266,7 @@ export function App() {
 
           {/* Main Shadcn Card */}
           <div className="rounded-xl border border-border bg-card/40 p-6 space-y-5 backdrop-blur-md">
-            
+
             {/* Status indicators */}
             <div className="flex items-center justify-between border-b border-border/80 pb-4">
               <div className="flex items-center gap-2">
@@ -274,7 +274,7 @@ export function App() {
                 <span className="text-xs font-medium text-muted-foreground">Awaiting Activation</span>
               </div>
               <span className="text-[10px] font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded border border-border">
-                {appInfo?.version ? `v${appInfo.version}` : "v0.1.4"}
+                {appInfo?.version ? `v${appInfo.version}` : "v0.1.7"}
               </span>
             </div>
 
