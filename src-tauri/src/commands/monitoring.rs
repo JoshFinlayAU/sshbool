@@ -626,8 +626,9 @@ pub async fn services_list(
 fn validate_systemd_unit(unit: &str) -> Result<(), AppError> {
     let valid = !unit.is_empty()
         && unit.len() <= 256
-        && unit.chars().all(|c| c.is_ascii_alphanumeric()
-            || matches!(c, '-' | '_' | '.' | '@' | ':'));
+        && unit
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '@' | ':'));
     if !valid {
         return Err(AppError::Validation {
             field: "unit".into(),

@@ -32,11 +32,18 @@ impl client::Handler for ClientHandler {
             if expected == &fp_sha256 {
                 Ok(true)
             } else {
-                tracing::warn!("SSH host key mismatch! expected={}, received={}", expected, fp_sha256);
+                tracing::warn!(
+                    "SSH host key mismatch! expected={}, received={}",
+                    expected,
+                    fp_sha256
+                );
                 Ok(false)
             }
         } else {
-            tracing::info!("First-time SSH connection host fingerprint learned: {}", fp_sha256);
+            tracing::info!(
+                "First-time SSH connection host fingerprint learned: {}",
+                fp_sha256
+            );
             Ok(true)
         }
     }

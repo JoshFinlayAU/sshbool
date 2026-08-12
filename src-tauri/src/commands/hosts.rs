@@ -244,7 +244,11 @@ pub async fn hosts_get(state: State<'_, Arc<AppState>>, id: String) -> Result<Ho
         .flatten();
 
     let mut dto = host_from_row(h);
-    dto.password = if password_set { Some("••••••••".to_string()) } else { None };
+    dto.password = if password_set {
+        Some("••••••••".to_string())
+    } else {
+        None
+    };
     dto.has_password = Some(password_set);
     dto.ssh_key_id = ssh_key_id.map(|(v,)| v);
     Ok(dto)
