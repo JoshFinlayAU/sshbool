@@ -118,6 +118,8 @@ export const ipc = {
   hostsTogglePin: (id: string) => call<boolean>("hosts_toggle_pin", { id }),
   hostsSearch: (query: string) => call<HostSummaryDto[]>("hosts_search", { query }),
   hostsListRecent: (limit = 20) => call<HostSummaryDto[]>("hosts_list_recent", { limit }),
+  hostsJumpChains: () =>
+    call<Record<string, string[]>>("hosts_jump_chains"),
   hostsImport: (format: string, content: string) =>
     call<{ hosts: NewHostDto[]; count: number }>("hosts_import", { format, content }),
   hostsImportCommit: (hosts: NewHostDto[]) =>

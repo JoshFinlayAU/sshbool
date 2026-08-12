@@ -32,11 +32,18 @@ impl client::Handler for ClientHandler {
             if expected == &fp_sha256 {
                 Ok(true)
             } else {
-                tracing::warn!("SSH host key mismatch! expected={}, received={}", expected, fp_sha256);
+                tracing::warn!(
+                    "SSH host key mismatch! expected={}, received={}",
+                    expected,
+                    fp_sha256
+                );
                 Ok(false)
             }
         } else {
-            tracing::info!("First-time SSH connection host fingerprint learned: {}", fp_sha256);
+            tracing::info!(
+                "First-time SSH connection host fingerprint learned: {}",
+                fp_sha256
+            );
             Ok(true)
         }
     }
@@ -112,15 +119,24 @@ impl ConnectionManager {
         host_id: &str,
         key_passphrase: Option<String>,
     ) -> Result<String, DomainError> {
-        self.session_open_inner(host_id, &mut Vec::new(), key_passphrase)
+        self.session_open_inner(host_id, &mut Vec::new(), key_passphrase, None)
             .await
     }
 
+    /// Open a session to `host_id`.
+    ///
+    /// `via` is the session id of an already-connected host to tunnel from.
+    /// When it is `Some`, the host's own ProxyJump chain is skipped — the
+    /// caller has already established the route. When it is `None`, the host's
+    /// configured chain is walked hop by hop: hop 0 connects using its own
+    /// configuration (so chains compose), and each later hop is tunnelled
+    /// through the one before it.
     async fn session_open_inner(
         &self,
         host_id: &str,
         chain: &mut Vec<String>,
         key_passphrase: Option<String>,
+        via: Option<String>,
     ) -> Result<String, DomainError> {
         if let Some(sid) = self.host_to_session.read().await.get(host_id).cloned() {
             return Ok(sid);
@@ -133,8 +149,8 @@ impl ConnectionManager {
         }
         chain.push(host_id.to_string());
 
-        let row: Option<(String, String, i64, String, Option<String>)> = sqlx::query_as(
-            r#"SELECT hostname, COALESCE(username,''), port, auth_method, jump_host_id
+        let row: Option<(String, String, i64, String)> = sqlx::query_as(
+            r#"SELECT hostname, COALESCE(username,''), port, auth_method
                FROM hosts WHERE id = ? AND deleted_at IS NULL"#,
         )
         .bind(host_id)
@@ -142,11 +158,38 @@ impl ConnectionManager {
         .await
         .map_err(|e| DomainError::Crypto(e.to_string()))?;
 
-        let Some((hostname, username, port, auth_method, jump_host_id)) = row else {
+        let Some((hostname, username, port, auth_method)) = row else {
             return Err(DomainError::NotFound {
                 entity: "host",
                 id: Some(host_id.into()),
             });
+        };
+
+        // Ordered ProxyJump chain, nearest hop first. Falls back to the legacy
+        // single-hop column for rows written before the chain table existed.
+        let hops: Vec<String> = {
+            let rows: Vec<(String,)> = sqlx::query_as(
+                "SELECT jump_host_id FROM host_jump_hops WHERE host_id = ? ORDER BY position",
+            )
+            .bind(host_id)
+            .fetch_all(self.vault.pool())
+            .await
+            .map_err(|e| DomainError::Crypto(e.to_string()))?;
+            if rows.is_empty() {
+                let legacy: Option<(Option<String>,)> =
+                    sqlx::query_as("SELECT jump_host_id FROM hosts WHERE id = ?")
+                        .bind(host_id)
+                        .fetch_optional(self.vault.pool())
+                        .await
+                        .map_err(|e| DomainError::Crypto(e.to_string()))?;
+                legacy
+                    .and_then(|(v,)| v)
+                    .filter(|s| !s.is_empty())
+                    .into_iter()
+                    .collect()
+            } else {
+                rows.into_iter().map(|(id,)| id).collect()
+            }
         };
         let username = if username.is_empty() {
             "root".into()
@@ -171,8 +214,22 @@ impl ConnectionManager {
             learned_fp: learned_fp.clone(),
         };
 
-        let mut handle = if let Some(jump_id) = jump_host_id.filter(|s| !s.is_empty()) {
-            let jump_sid = Box::pin(self.session_open_inner(&jump_id, chain, None)).await?;
+        // Establish the route. `via` short-circuits the host's own chain
+        // because the caller is already positioned on the far end of it.
+        let entry_session = match via {
+            Some(sid) => Some(sid),
+            None => {
+                let mut previous: Option<String> = None;
+                for hop_id in &hops {
+                    previous = Some(
+                        Box::pin(self.session_open_inner(hop_id, chain, None, previous)).await?,
+                    );
+                }
+                previous
+            }
+        };
+
+        let mut handle = if let Some(jump_sid) = entry_session {
             let jump_live = self.sessions.read().await.get(&jump_sid).cloned().ok_or(
                 DomainError::NotFound {
                     entity: "session",

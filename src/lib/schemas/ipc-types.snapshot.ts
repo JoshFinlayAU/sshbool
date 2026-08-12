@@ -43,7 +43,10 @@ export type HostDto = {
   notes: string | null
   lastConnectedAt: number | null
   connectCount: number
+  /** First hop; mirrors `jumpHostIds[0]`. Kept for compatibility. */
   jumpHostId?: string | null
+  /** Ordered ProxyJump chain, nearest hop first. */
+  jumpHostIds?: string[]
   proxyId?: string | null
   password?: string | null
   sshKeyId?: string | null
@@ -92,6 +95,8 @@ export type NewHostDto = {
   password?: string | null
   /** Vault key id, or `"auto"` for latest key. */
   sshKeyId?: string | null
+  /** Ordered ProxyJump chain, nearest hop first. */
+  jumpHostIds?: string[] | null
 }
 
 export type KnownHostDto = {

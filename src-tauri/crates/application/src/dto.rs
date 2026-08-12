@@ -43,9 +43,15 @@ pub struct NewHostDto {
     pub password: Option<String>,
     /// SSH key id (`auto` = latest vault key).
     pub ssh_key_id: Option<String>,
-    /// ProxyJump host id.
+    /// First ProxyJump hop.
+    ///
+    /// Superseded by [`Self::jump_host_ids`]; kept so existing callers and
+    /// stored exports keep working. When both are set the chain wins.
     #[serde(default)]
     pub jump_host_id: Option<String>,
+    /// Ordered ProxyJump chain, nearest hop first.
+    #[serde(default)]
+    pub jump_host_ids: Option<Vec<String>>,
     /// Outbound proxy id.
     #[serde(default)]
     pub proxy_id: Option<String>,
@@ -85,8 +91,11 @@ pub struct HostDto {
     pub last_connected_at: Option<i64>,
     /// Connect count.
     pub connect_count: i64,
-    /// ProxyJump host id.
+    /// First ProxyJump hop (mirrors `jump_host_ids[0]`, kept for compatibility).
     pub jump_host_id: Option<String>,
+    /// Ordered ProxyJump chain, nearest hop first.
+    #[serde(default)]
+    pub jump_host_ids: Vec<String>,
     /// Outbound proxy id.
     pub proxy_id: Option<String>,
     /// Server password (unsealed from vault when loaded).
