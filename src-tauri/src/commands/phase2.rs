@@ -189,7 +189,10 @@ pub async fn auth_fido2_status() -> Result<Value, AppError> {
 }
 
 fn validate_safe_remote_path(path: &str) -> Result<String, AppError> {
-    if path.chars().any(|c| matches!(c, ';' | '&' | '|' | '`' | '$' | '(' | ')' | '\n' | '\r')) {
+    if path
+        .chars()
+        .any(|c| matches!(c, ';' | '&' | '|' | '`' | '$' | '(' | ')' | '\n' | '\r'))
+    {
         return Err(AppError::Validation {
             field: "path".into(),
             message: "path contains disallowed shell characters".into(),
@@ -200,7 +203,10 @@ fn validate_safe_remote_path(path: &str) -> Result<String, AppError> {
 }
 
 fn validate_container_id(id: &str) -> Result<&str, AppError> {
-    let valid = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+    let valid = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
     if !valid {
         return Err(AppError::Validation {
             field: "container_id".into(),
@@ -236,7 +242,10 @@ pub async fn editor_diff(
     let safe_path = validate_safe_remote_path(&path)?;
     state
         .connections
-        .exec_command(&host_id, &format!("git diff -- {safe_path} 2>&1 | head -n 500"))
+        .exec_command(
+            &host_id,
+            &format!("git diff -- {safe_path} 2>&1 | head -n 500"),
+        )
         .await
         .map_err(Into::into)
 }
@@ -339,10 +348,7 @@ pub async fn docker_logs(
     let n = tail.unwrap_or(200).min(5000);
     state
         .connections
-        .exec_command(
-            &host_id,
-            &format!("docker logs --tail {n} {safe_id} 2>&1"),
-        )
+        .exec_command(&host_id, &format!("docker logs --tail {n} {safe_id} 2>&1"))
         .await
         .map_err(Into::into)
 }
@@ -678,10 +684,12 @@ fn validate_local_sandbox(path: &std::path::Path) -> Result<std::path::PathBuf, 
         }
     }
 
-    let canonical_path = check_path.canonicalize().map_err(|e| AppError::Validation {
-        field: "path".into(),
-        message: format!("invalid path: {e}"),
-    })?;
+    let canonical_path = check_path
+        .canonicalize()
+        .map_err(|e| AppError::Validation {
+            field: "path".into(),
+            message: format!("invalid path: {e}"),
+        })?;
 
     if !canonical_path.starts_with(&canonical_home) {
         return Err(AppError::Validation {
@@ -749,12 +757,13 @@ pub async fn rdp_launch_native(
     let mut p = password.as_deref().unwrap_or("").to_string();
     if p == "••••••••" || p.is_empty() {
         if let Some(ref hid) = host_id {
-            let cred_id: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
-                .bind(format!("host:{hid}:cred"))
-                .fetch_optional(state.vault.pool())
-                .await
-                .ok()
-                .flatten();
+            let cred_id: Option<(String,)> =
+                sqlx::query_as("SELECT value FROM settings WHERE key = ?")
+                    .bind(format!("host:{hid}:cred"))
+                    .fetch_optional(state.vault.pool())
+                    .await
+                    .ok()
+                    .flatten();
             if let Some((cid,)) = cred_id {
                 let secret: Option<(Vec<u8>, Vec<u8>)> =
                     sqlx::query_as("SELECT ciphertext, nonce FROM credentials WHERE id = ?")
@@ -850,7 +859,9 @@ pub async fn rdp_launch_native(
             }
             let _ = cmd.spawn();
         } else {
-            let safe_host = host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':');
+            let safe_host = host
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':');
             if safe_host {
                 let mut cmd = Command::new("mstsc.exe");
                 cmd.arg(format!("/v:{addr}"));
@@ -912,8 +923,8 @@ pub async fn rdp_launch_native(
 
     #[cfg(target_os = "linux")]
     {
-        use std::process::Command;
         use std::io::Write;
+        use std::process::Command;
 
         let is_wayland = std::env::var("XDG_SESSION_TYPE")
             .map(|v| v.to_lowercase() == "wayland")

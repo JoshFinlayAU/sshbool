@@ -5,6 +5,14 @@ export type AppError =
   | { kind: "Unauthorized"; reason: string }
   | { kind: "Auth"; method: string; message: string }
   | { kind: "HostKeyChanged"; expected: string; actual: string }
+  | {
+      kind: "FingerprintUnknown"
+      host: string
+      port: number
+      fingerprint: string
+      fingerprintMd5?: string
+      keyType: string
+    }
   | { kind: "Connection"; message: string; retryable: boolean }
   | { kind: "Transfer"; jobId: string; message: string }
   | { kind: "Db"; engine: string; message: string }

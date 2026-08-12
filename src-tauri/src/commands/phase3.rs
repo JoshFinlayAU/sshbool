@@ -201,8 +201,23 @@ fn build_db_cmd(conn: &DbConn, sql: &str, structured: bool) -> Result<String, Ap
             ))
         }
         "redis" => {
-            let cmd_name = sql.trim().split_whitespace().next().unwrap_or("").to_uppercase();
-            let blocked = ["CONFIG", "SLAVEOF", "REPLICAOF", "MODULE", "EVAL", "EVALSHA", "DEBUG", "SHUTDOWN", "SCRIPT"];
+            let cmd_name = sql
+                .trim()
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_uppercase();
+            let blocked = [
+                "CONFIG",
+                "SLAVEOF",
+                "REPLICAOF",
+                "MODULE",
+                "EVAL",
+                "EVALSHA",
+                "DEBUG",
+                "SHUTDOWN",
+                "SCRIPT",
+            ];
             if blocked.contains(&cmd_name.as_str()) {
                 return Err(AppError::Validation {
                     field: "sql".into(),
@@ -210,7 +225,10 @@ fn build_db_cmd(conn: &DbConn, sql: &str, structured: bool) -> Result<String, Ap
                 });
             }
             let sql_escaped = shell_escape_single_quoted(sql);
-            Ok(format!("redis-cli -h {} -p {} '{sql_escaped}' 2>&1", conn.host, conn.port))
+            Ok(format!(
+                "redis-cli -h {} -p {} '{sql_escaped}' 2>&1",
+                conn.host, conn.port
+            ))
         }
         "mongo" | "mongodb" => Ok(format!(
             "mongosh --quiet mongodb://{}:{}/{} --eval '{sql_escaped}' 2>&1",
@@ -218,7 +236,10 @@ fn build_db_cmd(conn: &DbConn, sql: &str, structured: bool) -> Result<String, Ap
         )),
         "sqlite" => {
             let sql_upper = sql.to_uppercase();
-            if sql_upper.contains(".SHELL") || sql_upper.contains(".SYSTEM") || sql_upper.contains(".LOAD") {
+            if sql_upper.contains(".SHELL")
+                || sql_upper.contains(".SYSTEM")
+                || sql_upper.contains(".LOAD")
+            {
                 return Err(AppError::Validation {
                     field: "sql".into(),
                     message: "disallowed SQLite dot shell commands".into(),
@@ -744,7 +765,10 @@ pub async fn k8s_contexts_list(
 }
 
 fn validate_k8s_name<'a>(name: &'a str, field_name: &'static str) -> Result<&'a str, AppError> {
-    let valid = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_');
+    let valid = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_');
     if !valid {
         return Err(AppError::Validation {
             field: field_name.into(),
@@ -916,7 +940,10 @@ pub async fn devtools_git_status(
     host_id: String,
     path: String,
 ) -> Result<String, AppError> {
-    if path.chars().any(|c| matches!(c, ';' | '&' | '|' | '`' | '$' | '(' | ')' | '\n' | '\r')) {
+    if path
+        .chars()
+        .any(|c| matches!(c, ';' | '&' | '|' | '`' | '$' | '(' | ')' | '\n' | '\r'))
+    {
         return Err(AppError::Validation {
             field: "path".into(),
             message: "path contains disallowed shell characters".into(),
@@ -966,7 +993,9 @@ pub async fn devtools_run(
     // Validate that the target host argument is safe (no spaces, shell characters, or option flags)
     let host_arg = args[args.len() - 1];
     let host_safe = !host_arg.starts_with('-')
-        && host_arg.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':');
+        && host_arg
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':');
     if !host_safe {
         return Err(AppError::Validation {
             field: "command".into(),

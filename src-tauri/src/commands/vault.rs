@@ -634,10 +634,12 @@ fn validate_local_sandbox(path: &std::path::Path) -> Result<std::path::PathBuf, 
         }
     }
 
-    let canonical_path = check_path.canonicalize().map_err(|e| AppError::Validation {
-        field: "path".into(),
-        message: format!("invalid path: {e}"),
-    })?;
+    let canonical_path = check_path
+        .canonicalize()
+        .map_err(|e| AppError::Validation {
+            field: "path".into(),
+            message: format!("invalid path: {e}"),
+        })?;
 
     if !canonical_path.starts_with(&canonical_home) {
         return Err(AppError::Validation {
@@ -649,12 +651,26 @@ fn validate_local_sandbox(path: &std::path::Path) -> Result<std::path::PathBuf, 
     // Also block sensitive hidden files in the target filename
     if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
         let blocked = [
-            ".bashrc", ".bash_profile", ".bash_logout", ".profile",
-            ".zshrc", ".zprofile", ".zlogout", ".zshenv",
-            ".ssh", "authorized_keys", "id_rsa", "id_ecdsa", "id_ed25519",
-            ".sshbool", "sshbool.db"
+            ".bashrc",
+            ".bash_profile",
+            ".bash_logout",
+            ".profile",
+            ".zshrc",
+            ".zprofile",
+            ".zlogout",
+            ".zshenv",
+            ".ssh",
+            "authorized_keys",
+            "id_rsa",
+            "id_ecdsa",
+            "id_ed25519",
+            ".sshbool",
+            "sshbool.db",
         ];
-        if blocked.iter().any(|&b| file_name.eq_ignore_ascii_case(b) || file_name.to_lowercase().contains(b)) {
+        if blocked
+            .iter()
+            .any(|&b| file_name.eq_ignore_ascii_case(b) || file_name.to_lowercase().contains(b))
+        {
             return Err(AppError::Validation {
                 field: "path".into(),
                 message: format!("writing to sensitive file is strictly forbidden: {file_name}"),

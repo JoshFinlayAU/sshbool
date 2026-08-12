@@ -161,10 +161,12 @@ fn validate_local_sandbox(path: &Path) -> Result<PathBuf, AppError> {
         }
     }
 
-    let canonical_path = check_path.canonicalize().map_err(|e| AppError::Validation {
-        field: "path".into(),
-        message: format!("invalid path: {e}"),
-    })?;
+    let canonical_path = check_path
+        .canonicalize()
+        .map_err(|e| AppError::Validation {
+            field: "path".into(),
+            message: format!("invalid path: {e}"),
+        })?;
 
     if !canonical_path.starts_with(&canonical_home) {
         return Err(AppError::Validation {
@@ -203,8 +205,14 @@ async fn resolve_local_dest(remote_path: &str, local_path: &str) -> Result<Strin
     // Also block sensitive filename if target was passed directly
     if let Some(target_file) = target.file_name().and_then(|s| s.to_str()) {
         let blocked_files = [
-            ".bashrc", ".bash_profile", ".profile", ".zshrc",
-            "authorized_keys", ".ssh", "id_rsa", "id_ed25519"
+            ".bashrc",
+            ".bash_profile",
+            ".profile",
+            ".zshrc",
+            "authorized_keys",
+            ".ssh",
+            "id_rsa",
+            "id_ed25519",
         ];
         if blocked_files.contains(&target_file) {
             return Err(AppError::Validation {
@@ -898,7 +906,10 @@ fn validate_local_delete_path(raw_path: &str) -> Result<PathBuf, AppError> {
     })?;
 
     // Block root and system critical directories
-    let blocked_prefixes = ["/", "/etc", "/bin", "/sbin", "/usr", "/lib", "/boot", "/dev", "/proc", "/sys", "/root", "/var", "/run"];
+    let blocked_prefixes = [
+        "/", "/etc", "/bin", "/sbin", "/usr", "/lib", "/boot", "/dev", "/proc", "/sys", "/root",
+        "/var", "/run",
+    ];
     for blocked in blocked_prefixes {
         if canonical == Path::new(blocked) {
             return Err(AppError::Validation {
@@ -932,9 +943,11 @@ fn validate_local_delete_path(raw_path: &str) -> Result<PathBuf, AppError> {
 #[tauri::command]
 pub async fn local_delete(path: String, recursive: bool) -> Result<(), AppError> {
     let safe_path = validate_local_delete_path(&path)?;
-    let meta = tokio::fs::metadata(&safe_path).await.map_err(|e| AppError::Io {
-        message: e.to_string(),
-    })?;
+    let meta = tokio::fs::metadata(&safe_path)
+        .await
+        .map_err(|e| AppError::Io {
+            message: e.to_string(),
+        })?;
     if meta.is_dir() {
         if recursive {
             tokio::fs::remove_dir_all(&safe_path)
