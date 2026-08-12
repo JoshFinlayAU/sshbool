@@ -74,6 +74,7 @@ pub async fn migrate(pool: &SqlitePool) -> Result<(), DomainError> {
         include_str!("../../../migrations/0016_host_icon.sql"),
         include_str!("../../../migrations/0017_license_features.sql"),
         include_str!("../../../migrations/0018_reset_unverified_known_hosts.sql"),
+        include_str!("../../../migrations/0019_jump_host_chain.sql"),
     ] {
         // Split on `;` and strip comment-only lines. Do NOT skip a whole chunk just because
         // it begins with a `--` header comment (that used to drop CREATE TABLE statements).
@@ -154,4 +155,105 @@ async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), DomainError> {
 pub fn default_db_path() -> PathBuf {
     let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
     base.join("com.abdug.sshbool").join("sshbool.db")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    /// The full migration chain must apply cleanly to an empty database, and
+    /// must be re-runnable — `migrate` runs on every launch.
+    #[tokio::test]
+    async fn migrations_apply_and_are_rerunnable() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+
+        migrate(&pool).await.expect("first run");
+        migrate(&pool).await.expect("second run must be a no-op");
+
+        let (count,): (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='host_jump_hops'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 1, "host_jump_hops should exist");
+    }
+
+    /// A database carrying a legacy single-hop value must come out of the
+    /// migration with an equivalent one-hop chain.
+    #[tokio::test]
+    async fn backfills_existing_single_jump_hosts() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        migrate(&pool).await.unwrap();
+
+        for (id, jump) in [("bastion", None), ("prod", Some("bastion"))] {
+            sqlx::query(
+                "INSERT INTO hosts (id, label, hostname, port, auth_method, jump_host_id, created_at, updated_at)
+                 VALUES (?, ?, 'h', 22, 'key', ?, 0, 0)",
+            )
+            .bind(id)
+            .bind(id)
+            .bind(jump)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        // Re-run: this is what an upgrading install experiences.
+        migrate(&pool).await.unwrap();
+
+        let hops: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT jump_host_id, position FROM host_jump_hops WHERE host_id = 'prod'",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(hops, vec![("bastion".to_string(), 0)]);
+
+        // And running again must not duplicate the backfilled hop.
+        migrate(&pool).await.unwrap();
+        let (count,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM host_jump_hops WHERE host_id = 'prod'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    /// A row whose jump_host_id points at itself must not be backfilled — that
+    /// would produce a chain that can never connect.
+    #[tokio::test]
+    async fn skips_self_referencing_legacy_rows() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        migrate(&pool).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO hosts (id, label, hostname, port, auth_method, jump_host_id, created_at, updated_at)
+             VALUES ('loop', 'loop', 'h', 22, 'key', 'loop', 0, 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        migrate(&pool).await.unwrap();
+
+        let (count,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM host_jump_hops WHERE host_id = 'loop'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 0);
+    }
 }

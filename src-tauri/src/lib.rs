@@ -270,6 +270,7 @@ pub fn run() {
             commands::hosts::hosts_toggle_pin,
             commands::hosts::hosts_search,
             commands::hosts::hosts_list_recent,
+            commands::hosts::hosts_jump_chains,
             commands::hosts::hosts_import,
             commands::hosts::hosts_import_commit,
             commands::import::import_sources,

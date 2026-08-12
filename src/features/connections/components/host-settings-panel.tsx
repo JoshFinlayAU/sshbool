@@ -24,7 +24,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { JumpChainEditor } from "@/features/connections/components/jump-chain-editor"
 import { HOST_COLOR_PRESETS } from "@/features/connections/host-appearance"
+import { flattenTree } from "@/features/connections/jump-chain"
 import { ipc } from "@/lib/ipc/commands"
 import type { HostDto } from "@/lib/ipc/types"
 import { cn } from "@/lib/utils"
@@ -68,6 +70,16 @@ export function HostSettingsPanel({ hostId }: { hostId: string }) {
     queryKey: ["keys"],
     queryFn: () => ipc.keysList(),
   })
+  const hostsTreeQuery = useQuery({
+    queryKey: ["hosts", "tree"],
+    queryFn: () => ipc.hostsListTree(),
+  })
+  const jumpChainsQuery = useQuery({
+    queryKey: ["hosts", "jumpChains"],
+    queryFn: () => ipc.hostsJumpChains(),
+  })
+  const allHosts = flattenTree(hostsTreeQuery.data ?? [])
+  const chainByHost = jumpChainsQuery.data ?? {}
   const workspacesQuery = useQuery<{ id: string; name: string }[]>({
     queryKey: ["settings", "workspaces"],
     queryFn: async () =>
@@ -97,6 +109,9 @@ export function HostSettingsPanel({ hostId }: { hostId: string }) {
       if (!form) return
       const payload: HostDto = {
         ...form,
+        jumpHostIds: form.jumpHostIds ?? [],
+        // Keep the legacy single-hop field consistent with the chain.
+        jumpHostId: form.jumpHostIds?.[0] ?? null,
         password: form.authMethod === "password" ? form.password : null,
         sshKeyId:
           form.authMethod === "key"
@@ -115,6 +130,7 @@ export function HostSettingsPanel({ hostId }: { hostId: string }) {
       setSavedSuccess(true)
       await qc.invalidateQueries({ queryKey: ["hosts"] })
       await qc.invalidateQueries({ queryKey: ["host", hostId] })
+      await qc.invalidateQueries({ queryKey: ["hosts", "jumpChains"] })
       await qc.invalidateQueries({ queryKey: ["settings"] })
       setTimeout(() => setSavedSuccess(false), 3000)
     },
@@ -380,6 +396,17 @@ export function HostSettingsPanel({ hostId }: { hostId: string }) {
                   </div>
                 )}
               </div>
+            </div>
+            {/* Jump Host Chain Card */}
+            <div className="rounded-xl border border-border/70 bg-card/60 p-4 shadow-2xs">
+              <JumpChainEditor
+                hostId={hostId}
+                hostLabel={form.label || form.hostname}
+                chain={form.jumpHostIds ?? []}
+                hosts={allHosts}
+                chainByHost={chainByHost}
+                onChange={(jumpHostIds) => setForm({ ...form, jumpHostIds })}
+              />
             </div>
           </div>
           {/* Right Column: Style & Quick Overview */}

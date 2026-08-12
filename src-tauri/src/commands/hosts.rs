@@ -88,9 +88,142 @@ fn map_host(
         last_connected_at,
         connect_count,
         jump_host_id,
+        // Filled in by `load_jump_chain` for callers that need it; the tree
+        // view does not, so it stays empty rather than costing a query per row.
+        jump_host_ids: Vec::new(),
         proxy_id,
         password: None,
         ssh_key_id: None,
+    }
+}
+
+/// Read a host's ProxyJump chain, nearest hop first.
+pub(crate) async fn load_jump_chain(
+    pool: &sqlx::SqlitePool,
+    host_id: &str,
+) -> Result<Vec<String>, AppError> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT jump_host_id FROM host_jump_hops WHERE host_id = ? ORDER BY position",
+    )
+    .bind(host_id)
+    .fetch_all(pool)
+    .await
+    .map_err(db)?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
+/// Walk the jump graph from `start`, looking for a route back to `target`.
+///
+/// Connecting to a host opens its hops first, so a loop anywhere in the
+/// reachable set hangs the connect. Chains make loops easy to create by
+/// accident, so this catches them at save time where we can name the problem.
+async fn reaches(pool: &sqlx::SqlitePool, start: &str, target: &str) -> Result<bool, AppError> {
+    let mut queue = vec![start.to_string()];
+    let mut visited = std::collections::HashSet::new();
+
+    while let Some(current) = queue.pop() {
+        if current == target {
+            return Ok(true);
+        }
+        if !visited.insert(current.clone()) {
+            continue;
+        }
+        let hops: Vec<(String,)> =
+            sqlx::query_as("SELECT jump_host_id FROM host_jump_hops WHERE host_id = ?")
+                .bind(&current)
+                .fetch_all(pool)
+                .await
+                .map_err(db)?;
+        queue.extend(hops.into_iter().map(|(id,)| id));
+    }
+    Ok(false)
+}
+
+/// Validate a proposed chain and rewrite it wholesale.
+///
+/// Rejects anything that would not connect: unknown hops, a host used as its
+/// own jump host, the same hop twice, or a hop that routes back to this host.
+async fn save_jump_chain(
+    pool: &sqlx::SqlitePool,
+    host_id: &str,
+    chain: &[String],
+) -> Result<Option<String>, AppError> {
+    let mut seen = std::collections::HashSet::new();
+    for hop in chain {
+        if hop.is_empty() {
+            continue;
+        }
+        if hop == host_id {
+            return Err(AppError::Validation {
+                field: "jumpHostIds".into(),
+                message: "A host cannot jump through itself".into(),
+            });
+        }
+        if !seen.insert(hop.as_str()) {
+            return Err(AppError::Validation {
+                field: "jumpHostIds".into(),
+                message: "The same jump host appears twice in the chain".into(),
+            });
+        }
+        let exists: Option<(String,)> =
+            sqlx::query_as("SELECT id FROM hosts WHERE id = ? AND deleted_at IS NULL")
+                .bind(hop)
+                .fetch_optional(pool)
+                .await
+                .map_err(db)?;
+        if exists.is_none() {
+            return Err(AppError::Validation {
+                field: "jumpHostIds".into(),
+                message: "A selected jump host no longer exists".into(),
+            });
+        }
+        // The hop's own chain must not lead back here.
+        if reaches(pool, hop, host_id).await? {
+            return Err(AppError::Validation {
+                field: "jumpHostIds".into(),
+                message:
+                    "That jump host routes back to this host, which would create a connection loop"
+                        .into(),
+            });
+        }
+    }
+
+    sqlx::query("DELETE FROM host_jump_hops WHERE host_id = ?")
+        .bind(host_id)
+        .execute(pool)
+        .await
+        .map_err(db)?;
+
+    let mut first = None;
+    for (position, hop) in chain.iter().filter(|h| !h.is_empty()).enumerate() {
+        if first.is_none() {
+            first = Some(hop.clone());
+        }
+        sqlx::query(
+            "INSERT INTO host_jump_hops (host_id, position, jump_host_id) VALUES (?, ?, ?)",
+        )
+        .bind(host_id)
+        .bind(position as i64)
+        .bind(hop)
+        .execute(pool)
+        .await
+        .map_err(db)?;
+    }
+
+    Ok(first)
+}
+
+/// Reconcile the legacy single-hop field with the chain.
+///
+/// Callers may send either shape, so prefer an explicit chain and fall back to
+/// the single field. Returns the chain to persist.
+fn effective_chain(chain: Option<Vec<String>>, single: Option<&str>) -> Vec<String> {
+    match chain {
+        Some(hops) => hops.into_iter().filter(|h| !h.is_empty()).collect(),
+        None => single
+            .filter(|s| !s.is_empty())
+            .map(|s| vec![s.to_string()])
+            .unwrap_or_default(),
     }
 }
 
@@ -197,6 +330,28 @@ pub async fn hosts_list_tree(
     Ok(nodes)
 }
 
+/// Every host's ProxyJump chain, keyed by host id.
+///
+/// The chain editor needs the whole graph to hide options that would create a
+/// loop; fetching it in one call avoids a request per host.
+#[tauri::command]
+pub async fn hosts_jump_chains(
+    state: State<'_, Arc<AppState>>,
+) -> Result<std::collections::HashMap<String, Vec<String>>, AppError> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT host_id, jump_host_id FROM host_jump_hops ORDER BY host_id, position",
+    )
+    .fetch_all(state.vault.pool())
+    .await
+    .map_err(db)?;
+
+    let mut out: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for (host_id, jump_host_id) in rows {
+        out.entry(host_id).or_default().push(jump_host_id);
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub async fn hosts_get(state: State<'_, Arc<AppState>>, id: String) -> Result<HostDto, AppError> {
     let row: Option<HostRow> = sqlx::query_as(
@@ -251,6 +406,7 @@ pub async fn hosts_get(state: State<'_, Arc<AppState>>, id: String) -> Result<Ho
     let mut dto = host_from_row(h);
     dto.password = password;
     dto.ssh_key_id = ssh_key_id.map(|(v,)| v);
+    dto.jump_host_ids = load_jump_chain(state.vault.pool(), &id).await?;
     Ok(dto)
 }
 
@@ -268,6 +424,7 @@ pub async fn hosts_create(
         host.ssh_key_id.clone(),
     )
     .await?;
+    let chain = effective_chain(host.jump_host_ids.clone(), host.jump_host_id.as_deref());
     // identity_id references identities(id) — never store an ssh_keys id here.
     // SSH keys are bound via settings key host:{id}:ssh_key.
     sqlx::query(
@@ -283,7 +440,7 @@ pub async fn hosts_create(
     .bind(&host.username)
     .bind(&host.identity_id)
     .bind(&host.auth_method)
-    .bind(&host.jump_host_id)
+    .bind(chain.first())
     .bind(&host.proxy_id)
     .bind(&host.color)
     .bind(&host.icon)
@@ -293,6 +450,8 @@ pub async fn hosts_create(
     .execute(state.vault.pool())
     .await
     .map_err(db)?;
+
+    save_jump_chain(state.vault.pool(), &id, &chain).await?;
 
     if let Some(password) = host.password.filter(|p| !p.is_empty()) {
         let cred_id = Uuid::now_v7().to_string();
@@ -344,6 +503,13 @@ pub async fn hosts_create(
 #[tauri::command]
 pub async fn hosts_update(state: State<'_, Arc<AppState>>, host: HostDto) -> Result<(), AppError> {
     let now = chrono::Utc::now().timestamp_millis();
+    // An explicit chain wins; an empty one falls back to the legacy single
+    // field so older callers can still set a hop, and clearing both clears it.
+    let chain = effective_chain(
+        (!host.jump_host_ids.is_empty()).then(|| host.jump_host_ids.clone()),
+        host.jump_host_id.as_deref(),
+    );
+    let first_hop = save_jump_chain(state.vault.pool(), &host.id, &chain).await?;
     sqlx::query(
         r#"UPDATE hosts SET group_id=?, label=?, hostname=?, port=?, username=?, auth_method=?, identity_id=?, jump_host_id=?, proxy_id=?, color=?, icon=?, notes=?, is_favorite=?, is_pinned=?, updated_at=? WHERE id=?"#,
     )
@@ -354,7 +520,7 @@ pub async fn hosts_update(state: State<'_, Arc<AppState>>, host: HostDto) -> Res
     .bind(&host.username)
     .bind(&host.auth_method)
     .bind(&host.identity_id)
-    .bind(&host.jump_host_id)
+    .bind(&first_hop)
     .bind(&host.proxy_id)
     .bind(&host.color)
     .bind(&host.icon)
@@ -624,6 +790,7 @@ pub async fn hosts_import(
                         password: None,
                         ssh_key_id: Some("auto".into()),
                         jump_host_id: None,
+                        jump_host_ids: None,
                         proxy_id: None,
                     });
                 }
@@ -902,5 +1069,214 @@ fn db(e: sqlx::Error) -> AppError {
     AppError::Db {
         engine: "sqlite".into(),
         message: e.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    /// Minimal schema: just enough for the jump-chain logic.
+    async fn test_pool() -> sqlx::SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE hosts (id TEXT PRIMARY KEY NOT NULL, jump_host_id TEXT, deleted_at INTEGER)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"CREATE TABLE host_jump_hops (
+                 host_id TEXT NOT NULL,
+                 position INTEGER NOT NULL,
+                 jump_host_id TEXT NOT NULL,
+                 PRIMARY KEY (host_id, position)
+               )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool
+    }
+
+    async fn add_host(pool: &sqlx::SqlitePool, id: &str) {
+        sqlx::query("INSERT INTO hosts (id, deleted_at) VALUES (?, NULL)")
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    fn ids(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn effective_chain_prefers_an_explicit_chain() {
+        let chain = effective_chain(Some(ids(&["a", "b"])), Some("legacy"));
+        assert_eq!(chain, ids(&["a", "b"]));
+    }
+
+    #[test]
+    fn effective_chain_falls_back_to_the_legacy_single_hop() {
+        assert_eq!(effective_chain(None, Some("legacy")), ids(&["legacy"]));
+        assert_eq!(effective_chain(None, None), Vec::<String>::new());
+        // An empty legacy value clears rather than creating a blank hop.
+        assert_eq!(effective_chain(None, Some("")), Vec::<String>::new());
+    }
+
+    #[test]
+    fn effective_chain_drops_blank_hops() {
+        let chain = effective_chain(Some(ids(&["a", "", "b"])), None);
+        assert_eq!(chain, ids(&["a", "b"]));
+    }
+
+    #[tokio::test]
+    async fn saves_and_reloads_a_chain_in_order() {
+        let pool = test_pool().await;
+        for id in ["target", "edge", "core", "dmz"] {
+            add_host(&pool, id).await;
+        }
+
+        let first = save_jump_chain(&pool, "target", &ids(&["edge", "core", "dmz"]))
+            .await
+            .unwrap();
+        assert_eq!(first.as_deref(), Some("edge"));
+        assert_eq!(
+            load_jump_chain(&pool, "target").await.unwrap(),
+            ids(&["edge", "core", "dmz"])
+        );
+    }
+
+    #[tokio::test]
+    async fn reordering_a_chain_replaces_it_wholesale() {
+        let pool = test_pool().await;
+        for id in ["target", "a", "b", "c"] {
+            add_host(&pool, id).await;
+        }
+        save_jump_chain(&pool, "target", &ids(&["a", "b", "c"]))
+            .await
+            .unwrap();
+
+        // Reverse the order — no stale rows should survive.
+        let first = save_jump_chain(&pool, "target", &ids(&["c", "b", "a"]))
+            .await
+            .unwrap();
+        assert_eq!(first.as_deref(), Some("c"));
+        assert_eq!(
+            load_jump_chain(&pool, "target").await.unwrap(),
+            ids(&["c", "b", "a"])
+        );
+    }
+
+    #[tokio::test]
+    async fn shortening_a_chain_removes_the_dropped_hops() {
+        let pool = test_pool().await;
+        for id in ["target", "a", "b", "c"] {
+            add_host(&pool, id).await;
+        }
+        save_jump_chain(&pool, "target", &ids(&["a", "b", "c"]))
+            .await
+            .unwrap();
+        save_jump_chain(&pool, "target", &ids(&["a"]))
+            .await
+            .unwrap();
+        assert_eq!(load_jump_chain(&pool, "target").await.unwrap(), ids(&["a"]));
+    }
+
+    #[tokio::test]
+    async fn clearing_a_chain_leaves_no_hops() {
+        let pool = test_pool().await;
+        for id in ["target", "a"] {
+            add_host(&pool, id).await;
+        }
+        save_jump_chain(&pool, "target", &ids(&["a"]))
+            .await
+            .unwrap();
+
+        let first = save_jump_chain(&pool, "target", &[]).await.unwrap();
+        assert!(first.is_none());
+        assert!(load_jump_chain(&pool, "target").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_a_host_jumping_through_itself() {
+        let pool = test_pool().await;
+        add_host(&pool, "target").await;
+        let err = save_jump_chain(&pool, "target", &ids(&["target"]))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation { .. }));
+    }
+
+    #[tokio::test]
+    async fn rejects_a_duplicated_hop() {
+        let pool = test_pool().await;
+        for id in ["target", "a"] {
+            add_host(&pool, id).await;
+        }
+        let err = save_jump_chain(&pool, "target", &ids(&["a", "a"]))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation { .. }));
+    }
+
+    #[tokio::test]
+    async fn rejects_an_unknown_hop() {
+        let pool = test_pool().await;
+        add_host(&pool, "target").await;
+        let err = save_jump_chain(&pool, "target", &ids(&["ghost"]))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation { .. }));
+    }
+
+    #[tokio::test]
+    async fn rejects_a_hop_that_routes_back_to_this_host() {
+        let pool = test_pool().await;
+        for id in ["a", "b"] {
+            add_host(&pool, id).await;
+        }
+        // b jumps through a; a must not then jump through b.
+        save_jump_chain(&pool, "b", &ids(&["a"])).await.unwrap();
+        let err = save_jump_chain(&pool, "a", &ids(&["b"])).await.unwrap_err();
+        assert!(matches!(err, AppError::Validation { .. }));
+    }
+
+    #[tokio::test]
+    async fn rejects_an_indirect_loop() {
+        let pool = test_pool().await;
+        for id in ["a", "b", "c"] {
+            add_host(&pool, id).await;
+        }
+        // c -> b -> a, so a must not jump through c.
+        save_jump_chain(&pool, "c", &ids(&["b"])).await.unwrap();
+        save_jump_chain(&pool, "b", &ids(&["a"])).await.unwrap();
+        let err = save_jump_chain(&pool, "a", &ids(&["c"])).await.unwrap_err();
+        assert!(matches!(err, AppError::Validation { .. }));
+    }
+
+    #[tokio::test]
+    async fn allows_a_shared_hop_used_by_several_hosts() {
+        let pool = test_pool().await;
+        for id in ["bastion", "one", "two"] {
+            add_host(&pool, id).await;
+        }
+        // A diamond is not a cycle — both hosts may share a bastion.
+        save_jump_chain(&pool, "one", &ids(&["bastion"]))
+            .await
+            .unwrap();
+        save_jump_chain(&pool, "two", &ids(&["bastion"]))
+            .await
+            .unwrap();
+        assert_eq!(
+            load_jump_chain(&pool, "two").await.unwrap(),
+            ids(&["bastion"])
+        );
     }
 }
