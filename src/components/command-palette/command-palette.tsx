@@ -1,9 +1,15 @@
-import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
 
 import { ipc } from "@/lib/ipc/commands"
 import { useLayoutStore } from "@/stores/layout.store"
 
+/**
+ * Command palette — actions only.
+ *
+ * Searching for hosts, snippets and notes lives in the title-bar omni search
+ * (⌘K). This is bound to ⌘⇧P, following the same split as most editors: ⌘K
+ * finds things, ⌘⇧P runs them.
+ */
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -12,7 +18,7 @@ export function CommandPalette() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "p") {
         e.preventDefault()
         setOpen((v) => !v)
       }
@@ -21,12 +27,6 @@ export function CommandPalette() {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [])
-
-  const results = useQuery({
-    queryKey: ["search", query],
-    queryFn: () => ipc.searchGlobal(query),
-    enabled: open && query.length > 0,
-  })
 
   const commands = useMemo(
     () => [
@@ -60,7 +60,7 @@ export function CommandPalette() {
         <input
           autoFocus
           className="placeholder:text-muted-foreground w-full border-b border-border bg-transparent px-4 py-3 text-sm outline-none"
-          placeholder="Search hosts, snippets, commands…"
+          placeholder="Run a command…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -80,17 +80,10 @@ export function CommandPalette() {
               </button>
             </li>
           ))}
-          {results.data?.map((r) => (
-            <li key={`${r.kind}-${r.id}`}>
-              <div className="text-muted-foreground px-3 py-2">
-                <span className="text-foreground">{r.title}</span>
-                {r.subtitle && <span className="ml-2 text-xs">{r.subtitle}</span>}
-                <span className="ml-2 text-xs uppercase">{r.kind}</span>
-              </div>
+          {filtered.length === 0 && (
+            <li className="text-muted-foreground px-3 py-4 text-center text-xs">
+              No matching command — press ⌘K to search hosts
             </li>
-          ))}
-          {filtered.length === 0 && (!results.data || results.data.length === 0) && (
-            <li className="text-muted-foreground px-3 py-4 text-center text-xs">No results</li>
           )}
         </ul>
       </div>
